@@ -16,6 +16,13 @@
 #include <ngx_core.h>
 #include <ngx_string.h>
 
+static u_char *ngx_sprintf_num(u_char *buf, u_char *last, uint64_t ui64,
+                               u_char zero, ngx_uint_t hexadecimal, ngx_uint_t width);
+static void ngx_encode_base64_internal(ngx_str_t *dst, ngx_str_t *src,
+                                       const u_char *basis, ngx_uint_t padding);
+static ngx_int_t ngx_decode_base64_internal(ngx_str_t *dst, ngx_str_t *src,
+                                            const u_char *basis);
+
 void
 ngx_strlow(u_char *dst, u_char *src, size_t n)
 {
@@ -431,6 +438,268 @@ ngx_filename_cmp(u_char *s1, u_char *s2, size_t n)
     return 0;
 }
 
+ngx_int_t
+ngx_atoi(u_char *line, size_t n)
+{
+    ngx_int_t value, cutoff, cutlim;
+
+    if(n == 0) {
+        return NGX_ERROR;
+    }
+
+    cutoff = NGX_MAX_INT_T_VALUE / 10;
+    cutlim = NGX_MAX_INT_T_VALUE % 10;
+
+    for (value = 0; n--; line++){
+        if (*line < '0' || *line > '9') {
+            return NGX_ERROR;
+        }
+        if (value >= cutoff && (value > cutoff || *line - '0' > cutlim)) {
+            return NGX_ERROR;
+        }
+
+        value = value * 10 + (*line - '0');
+    }
+
+    return value;
+}
+
+ngx_int_t
+ngx_atofp(u_char *line, size_t n, size_t point)
+{
+    ngx_int_t value, cutoff, cutlim;
+    ngx_uint_t dot;
+
+    if (n == 0) {
+        return NGX_ERROR;
+    }
+
+    cutoff = NGX_MAX_INT_T_VALUE / 10;
+    cutlim = NGX_MAX_INT_T_VALUE % 10;
+
+    //小数点标记，不能出现超过1
+    dot = 0;
+
+    for (value = 0; n--; line++) {
+
+        if (point == 0) {
+            return NGX_ERROR;
+        }
+
+        if (*line == '.') {
+            if(dot) {
+                return NGX_ERROR;
+            }
+
+            dot = 1;
+            continue;
+        }
+
+        if (*line < '0' || *line > '9') {
+            return NGX_ERROR;
+        }
+
+        if (value >= cutoff && (value > cutoff || *line - '0' > cutlim)) {
+            return NGX_ERROR;
+        }
+
+        value = value * 10 + (*line - '0');
+        point -= dot;
+    }
+
+    //剩余的直接补0
+    while(point --) {
+        if (value > cutoff) {
+            return NGX_ERROR;
+        }
+
+        value = value * 10;
+    }
+
+    return value;
+
+}
+
+ssize_t
+ngx_atosz(u_char *line, size_t n)
+{
+    ssize_t  value, cutoff, cutlim;
+
+    if (n == 0) {
+        return NGX_ERROR;
+    }
+
+    cutoff = NGX_MAX_SIZE_T_VALUE / 10;
+    cutlim = NGX_MAX_SIZE_T_VALUE % 10;
+
+    for (value = 0; n--; line++) {
+        if (*line < '0' || *line > '9') {
+            return NGX_ERROR;
+        }
+
+        if (value >= cutoff && (value > cutoff || *line - '0' > cutlim)) {
+            return NGX_ERROR;
+        }
+
+        value = value * 10 + (*line - '0');
+    }
+
+    return value;
+}
+
+off_t
+ngx_atoof(u_char *line, size_t n)
+{
+    off_t  value, cutoff, cutlim;
+
+    if (n == 0) {
+        return NGX_ERROR;
+    }
+
+    cutoff = NGX_MAX_OFF_T_VALUE / 10;
+    cutlim = NGX_MAX_OFF_T_VALUE % 10;
+
+    for (value = 0; n--; line++) {
+        if (*line < '0' || *line > '9') {
+            return NGX_ERROR;
+        }
+
+        if (value >= cutoff && (value > cutoff || *line - '0' > cutlim)) {
+            return NGX_ERROR;
+        }
+
+        value = value * 10 + (*line - '0');
+    }
+
+    return value;
+}
+
+
+time_t
+ngx_atotm(u_char *line, size_t n)
+{
+    time_t  value, cutoff, cutlim;
+
+    if (n == 0) {
+        return NGX_ERROR;
+    }
+
+    cutoff = NGX_MAX_TIME_T_VALUE / 10;
+    cutlim = NGX_MAX_TIME_T_VALUE % 10;
+
+    for (value = 0; n--; line++) {
+        if (*line < '0' || *line > '9') {
+            return NGX_ERROR;
+        }
+
+        if (value >= cutoff && (value > cutoff || *line - '0' > cutlim)) {
+            return NGX_ERROR;
+        }
+
+        value = value * 10 + (*line - '0');
+    }
+
+    return value;
+}
+
+ngx_int_t
+ngx_hextoi(u_char *line, size_t n)
+{
+    u_char     c, ch;
+    ngx_int_t  value, cutoff;
+
+    if (n == 0) {
+        return NGX_ERROR;
+    }
+
+    cutoff = NGX_MAX_INT_T_VALUE / 16;
+
+    for (value = 0; n--; line++) {
+        if (value > cutoff) {
+            return NGX_ERROR;
+        }
+
+        ch = *line;
+
+        if (ch >= '0' && ch <= '9') {
+            value = value * 16 + (ch - '0');
+            continue;
+        }
+
+        c = (u_char) (ch | 0x20);
+
+        if (c >= 'a' && c <= 'f') {
+            value = value * 16 + (c - 'a' + 10);
+            continue;
+        }
+
+        return NGX_ERROR;
+    }
+
+    return value;
+}
+
+u_char *
+ngx_hex_dump(u_char *dst, u_char *src, size_t len)
+{
+    static u_char  hex[] = "0123456789abcdef";
+
+    while (len--) {
+        //有空研究一下-_-
+        *dst++ = hex[*src >> 4];
+        *dst++ = hex[*src++ & 0xf];
+    }
+
+    return dst;
+}
+
+void
+ngx_encode_base64(ngx_str_t *dst, ngx_str_t *src)
+{
+    static u_char   basis64[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    ngx_encode_base64_internal(dst, src, basis64, 1);
+}
+
+void
+ngx_encode_base64url(ngx_str_t *dst, ngx_str_t *src)
+{
+    static u_char   basis64[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+    ngx_encode_base64_internal(dst, src, basis64, 0);
+}
+
+static void
+ngx_encode_base64_internal(ngx_str_t *dst, ngx_str_t *src, const u_char *basis,
+                           ngx_uint_t padding)
+{
+
+}
+
+
+ngx_int_t
+ngx_decode_base64(ngx_str_t *dst, ngx_str_t *src)
+{
+    return NGX_OK;
+}
+
+
+ngx_int_t
+ngx_decode_base64url(ngx_str_t *dst, ngx_str_t *src)
+{
+
+    return NGX_OK;
+}
+
+
+static ngx_int_t
+ngx_decode_base64_internal(ngx_str_t *dst, ngx_str_t *src, const u_char *basis)
+{
+
+    return NGX_OK;
+}
 
 u_char *
 ngx_vslprintf(u_char *buf, u_char *last, const char *fmt, va_list args)
@@ -763,6 +1032,202 @@ ngx_vslprintf(u_char *buf, u_char *last, const char *fmt, va_list args)
     return buf;
 }
 
+static u_char *
+ngx_sprintf_num(u_char *buf, u_char *last, uint64_t ui64, u_char zero,
+                ngx_uint_t hexadecimal, ngx_uint_t width)
+{
+    u_char         *p, temp[NGX_INT64_LEN + 1];
+    /*
+     * we need temp[NGX_INT64_LEN] only,
+     * but icc issues the warning
+     */
+    size_t          len;
+    uint32_t        ui32;
+    static u_char   hex[] = "0123456789abcdef";
+    static u_char   HEX[] = "0123456789ABCDEF";
+
+    p = temp + NGX_INT64_LEN;
+
+    if (hexadecimal == 0) {
+
+        if (ui64 <= (uint64_t) NGX_MAX_UINT32_VALUE) {
+
+            /*
+             * To divide 64-bit numbers and to find remainders
+             * on the x86 platform gcc and icc call the libc functions
+             * [u]divdi3() and [u]moddi3(), they call another function
+             * in its turn.  On FreeBSD it is the qdivrem() function,
+             * its source code is about 170 lines of the code.
+             * The glibc counterpart is about 150 lines of the code.
+             *
+             * For 32-bit numbers and some divisors gcc and icc use
+             * a inlined multiplication and shifts.  For example,
+             * unsigned "i32 / 10" is compiled to
+             *
+             *     (i32 * 0xCCCCCCCD) >> 35
+             */
+
+            ui32 = (uint32_t) ui64;
+
+            do {
+                *--p = (u_char) (ui32 % 10 + '0');
+            } while (ui32 /= 10);
+
+        } else {
+            do {
+                *--p = (u_char) (ui64 % 10 + '0');
+            } while (ui64 /= 10);
+        }
+
+    } else if (hexadecimal == 1) {
+
+        do {
+
+            /* the "(uint32_t)" cast disables the BCC's warning */
+            *--p = hex[(uint32_t) (ui64 & 0xf)];
+
+        } while (ui64 >>= 4);
+
+    } else { /* hexadecimal == 2 */
+
+        do {
+
+            /* the "(uint32_t)" cast disables the BCC's warning */
+            *--p = HEX[(uint32_t) (ui64 & 0xf)];
+
+        } while (ui64 >>= 4);
+    }
+
+    /* zero or space padding */
+
+    len = (temp + NGX_INT64_LEN) - p;
+
+    while (len++ < width && buf < last) {
+        *buf++ = zero;
+    }
+
+    /* number safe copy */
+
+    len = (temp + NGX_INT64_LEN) - p;
+
+    if (buf + len > last) {
+        len = last - buf;
+    }
+
+    return ngx_cpymem(buf, p, len);
+}
+
+/*
+ * ngx_utf8_decode() decodes two and more bytes UTF sequences only
+ * the return values:
+ *    0x80 - 0x10ffff         valid character
+ *    0x110000 - 0xfffffffd   invalid sequence
+ *    0xfffffffe              incomplete sequence
+ *    0xffffffff              error
+ */
+
+uint32_t
+ngx_utf8_decode(u_char **p, size_t n)
+{
+
+    return 0xffffffff;
+}
+
+
+size_t
+ngx_utf8_length(u_char *p, size_t n)
+{
+
+    return 0;
+}
+
+
+u_char *
+ngx_utf8_cpystrn(u_char *dst, u_char *src, size_t n, size_t len)
+{
+
+    return dst;
+}
+
+uintptr_t
+ngx_escape_uri(u_char *dst, u_char *src, size_t size, ngx_uint_t type)
+{
+
+    return (uintptr_t) dst;
+}
+
+
+void
+ngx_unescape_uri(u_char **dst, u_char **src, size_t size, ngx_uint_t type)
+{
+
+}
+
+
+uintptr_t
+ngx_escape_html(u_char *dst, u_char *src, size_t size)
+{
+
+    return (uintptr_t) dst;
+}
+
+
+uintptr_t
+ngx_escape_json(u_char *dst, u_char *src, size_t size)
+{
+
+    return (uintptr_t) dst;
+}
+
+void
+ngx_str_rbtree_insert_value(ngx_rbtree_node_t *temp, ngx_rbtree_node_t *node,
+ngx_rbtree_node_t *sentinel)
+{
+
+}
+
+ngx_str_node_t *
+ngx_str_rbtree_lookup(ngx_rbtree_t *rbtree, ngx_str_t *val, uint32_t hash)
+{
+
+    return NULL;
+}
+
+void
+ngx_sort(void *base, size_t n, size_t size,
+    ngx_int_t (*cmp)(const void *, const void *))
+{
+    u_char *p1, *p2, *p;
+
+    p = ngx_alloc(size, ngx_cycle->log);
+    if(p == NULL){
+        return;
+    }
+
+    //冒泡排序
+    //4,3,2,1
+    for (p1 = (u_char *) base + size;
+         p1 < (u_char *) base + n *size;
+            p1 += size)
+    {
+        //将base+size 拷贝到p中保留
+        //p1 = p = 3
+        ngx_memcpy(p, p1, size);
+
+        for (p2 = p1;
+             p2 > (u_char *) base && cmp(p2 - size, p) > 0;
+             p2 -= size)
+        {
+            //将4 赋值给3，覆盖3
+            ngx_memcpy(p2, p2 - size, size);
+        }
+        //经过for 循环 p2 -=size
+        //将保留在p 中的3 赋值给base 第一个位置，覆盖4
+        ngx_memcpy(p2, p, size);
+    }
+
+    ngx_free(p);
+}
 
 #if (NGX_MEMCPY_LIMIT)
 

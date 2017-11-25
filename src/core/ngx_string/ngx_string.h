@@ -147,4 +147,83 @@ ngx_int_t ngx_dns_strcmp(u_char *s1, u_char *s2);
 
 //比较文件名，可能带有特殊字符/
 ngx_int_t ngx_filename_cmp(u_char *s1, u_char *s2, size_t n);
+
+//指定长度的字符串转换成数字
+ngx_int_t ngx_atoi(u_char * line, size_t n);
+
+//将一个固定长度的定点小数字符串转换为ngx_int_t类型的正整数。转换结果会左移point指定的10进制位数
+//ngx_atofp("10.5", 4, 2) 返回1050
+ngx_int_t ngx_atofp(u_char *line, size_t n, size_t point);
+
+//指定长度的字符串转换成ssize_t类型数字  ssize_t是signed size_t
+ssize_t ngx_atosz(u_char *line, size_t n);
+
+//指定长度的字符串转换成off_t类型数字  off_t = int74_t == long long int
+off_t ngx_atoof(u_char *line, size_t n);
+
+//指定长度的字符串转换成time_t类型数字  long int
+time_t ngx_atotm(u_char *line, size_t n);
+
+//指定长度的字符串转换成十六进制数字
+ngx_int_t ngx_hextoi(u_char *line, size_t n);
+
+//把数字转换成16进制的字符串
+u_char *ngx_hex_dump(u_char *dst, u_char *src, size_t len);
+
+//将len base64 encoded 之后的长度
+#define ngx_base64_encoded_length(len) (((len + 2) / 3) * 4)
+#define ngx_base64_decoded_length(len)  (((len + 3) / 4) * 3)
+
+//base64编码
+void ngx_encode_base64(ngx_str_t *dst, ngx_str_t *src);
+//url 已经有一些特殊字符
+void ngx_encode_base64url(ngx_str_t *dst, ngx_str_t *src);
+ngx_int_t ngx_decode_base64(ngx_str_t *dst, ngx_str_t *src);
+ngx_int_t ngx_decode_base64url(ngx_str_t *dst, ngx_str_t *src);
+
+//把 utf8字符解码成双字节的 unicode或是单字节字符，但是该函数会移动*p的值
+uint32_t ngx_utf8_decode(u_char **p, size_t n);
+//得到utf8编码的字符占几个字节
+size_t ngx_utf8_length(u_char *p, size_t n);
+//赋值utf8字符串，保证完整的复制
+u_char *ngx_utf8_cpystrn(u_char *dst, u_char *src, size_t n, size_t len);
+
+#define NGX_ESCAPE_URI            0
+#define NGX_ESCAPE_ARGS           1
+#define NGX_ESCAPE_URI_COMPONENT  2
+#define NGX_ESCAPE_HTML           3
+#define NGX_ESCAPE_REFRESH        4
+#define NGX_ESCAPE_MEMCACHED      5
+#define NGX_ESCAPE_MAIL_AUTH      6
+
+#define NGX_UNESCAPE_URI       1
+#define NGX_UNESCAPE_REDIRECT  2
+
+//对uri进行编码
+uintptr_t ngx_escape_uri(u_char *dst, u_char *src, size_t size,
+                         ngx_uint_t type);
+
+//对uri的进行解码
+void ngx_unescape_uri(u_char **dst, u_char **src, size_t size, ngx_uint_t type);
+//对html进行编码
+uintptr_t ngx_escape_html(u_char *dst, u_char *src, size_t size);
+uintptr_t ngx_escape_json(u_char *dst, u_char *src, size_t size);
+
+typedef struct {
+    ngx_rbtree_node_t node;
+    ngx_str_t   str;
+} ngx_str_node_t;
+
+//向红黑树中添加数据节点，每个数据节点的关键字可以不是唯一的，但它们是以字符串作为唯一标识，存放在ngx_str_node_t结构体的str成员中
+void ngx_str_rbtree_insert_value(ngx_rbtree_node_t *temp,ngx_rbtree_node_t *node, ngx_rbtree_node_t *sentinel);
+ngx_str_node_t *ngx_str_rbtree_lookup(ngx_rbtree_t *rbtree, ngx_str_t *name,
+                                      uint32_t hash);
+
+void ngx_sort(void *base, size_t n, size_t size,
+    ngx_int_t(*cmp)(const void *, const void *));
+
+#define ngx_qsort             qsort
+
+#define ngx_value_helper(n)   #n
+#define ngx_value(n)          ngx_value_helper(n)
 #endif //NGX_STRING_NGX_STRING_H
