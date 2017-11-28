@@ -84,9 +84,9 @@ void *ngx_memcpy(void *dst, const void *src, size_t n);
 
 #else
 
-#define ngx_memcpy(dst, src, n) (void) memcpy(dst, src, n)
+#define ngx_memcpy(dst, src, n)   (void) memcpy(dst, src, n)
 //复制内存，返回复制完了dst的最后一个字符的下一个字符的指针
-#define ngx_cpymem(dst, src, n) (((u_char *) ngx_memcpy(dst, src, n)) + (n))
+#define ngx_cpymem(dst, src, n)   (((u_char *) memcpy(dst, src, n)) + (n))
 
 #endif
 
