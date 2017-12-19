@@ -94,8 +94,8 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
                 cl = ctx->in;
                 ctx->in = cl->next;
 
-                *last_out = cl;
-                last_out = &cl->next;
+                *last_out = cl;//复制cl
+                last_out = &cl->next;//将*last_out的地址复制为cl->next地址
                 cl->next = NULL;
 
                 continue;
