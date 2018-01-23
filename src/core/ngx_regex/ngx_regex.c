@@ -72,6 +72,7 @@ static ngx_list_t *ngx_pcre_studies;
 void
 ngx_regex_init(void)
 {
+    // 替换回调函数，ngx_regex_malloc会在全局的ngx_pcre_pool上进行内存分配
     pcre_malloc = ngx_regex_malloc;
     pcre_free = ngx_regex_free;
 }
@@ -97,6 +98,7 @@ ngx_regex_compile(ngx_regex_compile_t *rc)
     const char *errstr;
     ngx_regex_elt_t *elt;
 
+    //ngx_regex_malloc_init会把rc->pool复制给全局ngx_pcre_pool,共ngx_pcre_malloc使用
     ngx_regex_malloc_init(rc->pool);
 
     re = pcre_compile((const char *) rc->pattern.data, (int) rc->options,
