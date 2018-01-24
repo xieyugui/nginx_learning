@@ -56,27 +56,43 @@
 
 #define ngx_random               random
 
+/**
+Master进程能够接收并处理如下的信号：
+
+ERM, INT（快速退出，当前的请求不执行完成就退出）
+QUIT （优雅退出，执行完当前的请求后退出）
+HUP （重新加载配置文件，用新的配置文件启动新worker进程，并优雅的关闭旧的worker进程）
+USR1 （重新打开日志文件）
+USR2 （平滑的升级nginx二进制文件）
+WINCH （优雅的关闭worker进程）
+Worker进程也可以接收并处理一些信号：
+
+TERM, INT （快速退出）
+QUIT （优雅退出）
+USR1 （重新打开日志文件）
+ */
 /* TODO: #ifndef */
-#define NGX_SHUTDOWN_SIGNAL      QUIT
-#define NGX_TERMINATE_SIGNAL     TERM
-#define NGX_NOACCEPT_SIGNAL      WINCH
-#define NGX_RECONFIGURE_SIGNAL   HUP
+#define NGX_SHUTDOWN_SIGNAL      QUIT //优雅退出，执行完当前的请求后退出
+#define NGX_TERMINATE_SIGNAL     TERM //快速退出
+#define NGX_NOACCEPT_SIGNAL      WINCH //优雅的关闭worker进程
+#define NGX_RECONFIGURE_SIGNAL   HUP //重新加载配置文件，用新的配置文件启动新worker进程，并优雅的关闭旧的worker进程
 
 #if (NGX_LINUXTHREADS)
 #define NGX_REOPEN_SIGNAL        INFO
 #define NGX_CHANGEBIN_SIGNAL     XCPU
 #else
-#define NGX_REOPEN_SIGNAL        USR1
-#define NGX_CHANGEBIN_SIGNAL     USR2
+#define NGX_REOPEN_SIGNAL        USR1 //重新打开日志文件
+#define NGX_CHANGEBIN_SIGNAL     USR2 //平滑的升级nginx二进制文件
 #endif
 
 #define ngx_cdecl
 #define ngx_libc_cdecl
 
 #endif
-
+//intptr_t 和uintptr_t 类型用来存放指针地址。它们提供了一种可移植且安全的方法声明指针，而且和系统中使用的指针长度相同，对于把指针转化成整数形式来说很有用
 typedef intptr_t        ngx_int_t;
 typedef uintptr_t       ngx_uint_t;
+//一般用用配置项中的 ON | OFF选项标记  1代表ON 0代表OFF  初始值一定要设置为NGX_CONF_UNSET，否则报错，见ngx_conf_set_flag_slot
 typedef intptr_t        ngx_flag_t;
 
 
