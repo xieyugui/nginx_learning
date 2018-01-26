@@ -33,6 +33,7 @@ struct ngx_buf_s {
     ngx_file_t *file; /* 引用的文件 */
     ngx_buf_t *shadow;
 
+    //the buf's content could be changed
     unsigned temporary:1; /* 标志位，为1时，√√ */
 
     unsigned  memory:1; /* 标志位，为1时，内存只读 */
