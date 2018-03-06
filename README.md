@@ -1,2 +1,2 @@
 # nginx_learning
-nginx
+nginx stable-1.12
