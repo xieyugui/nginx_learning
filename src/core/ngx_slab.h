@@ -9,6 +9,7 @@
  * https://github.com/nginx/nginx/blob/branches/stable-1.12/src/core/ngx_slab.h
  * https://www.cnblogs.com/doop-ymc/p/3412572.html
  * https://github.com/MeteorKL/nginx
+ * http://ialloc.org/posts/2013/07/17/ngx-notes-slab-allocator/
 */
 
 //
