@@ -32,7 +32,9 @@ ngx_md5_update(ngx_md5_t *ctx, const void *data, size_t size)
 {
     size_t  used, free;
 
+    //0X3F转换为二进制数为00111111(也就是十进制的63)
     used = (size_t) (ctx->bytes & 0x3f);
+    //总长度
     ctx->bytes += size;
 
     if (used) {

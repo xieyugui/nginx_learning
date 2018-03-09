@@ -96,6 +96,7 @@ ngx_cpuinfo(void)
 
     ngx_cpuid(1, cpu);
 
+    //Intel
     if (ngx_strcmp(vendor, "GenuineIntel") == 0) {
 
         switch ((cpu[0] & 0xf00) >> 8) {

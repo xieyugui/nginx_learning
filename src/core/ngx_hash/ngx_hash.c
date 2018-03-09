@@ -276,7 +276,13 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
     }
 
     //分配2*max_size个字节的空间保存hash数据(该内存分配操作不在nginx的内存池中进行，因为test只是临时的)
-    /* 用于记录每个桶的临时大小 */
+
+    /* max_size是bucket的最大数量, 这里的test是用来做探测用的，探测的目标是在当前bucket的数量下，冲突发生的是否频繁。
+     * 过于频繁则说明当前的bucket数量过少，需要调整。那么如何判定冲突过于频繁呢？就是利用这个test数组，它总共有max_size个
+     * 元素，即最大的bucket。每个元素会累计落到该位置关键字长度，当大于256个字节，即u_short所表示的最大大小时，则判定
+     * bucket过少，引起了严重的冲突。后面会看到具体的处理。
+     */
+    //test数组中存放每个bucket的当前容量，如果某一个key的容量大于了bucket size就意味着需要加大hash桶的个数了
     test = ngx_alloc(hinit->max_size * sizeof(u_short), hinit->pool->log);
     if (test == NULL) {
         return NGX_ERROR;
@@ -285,15 +291,25 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
     // 实际可用空间为定义的bucket_size减去末尾的void *(结尾标识)，末尾的void* 指向NULL
     bucket_size = hinit->bucket_size - sizeof(void *);
     //每个桶能放多少个元素(nelt)，从而由总元素推算出需要多少个桶
+    /*
+     * 这里考虑NGX_HASH_ELT_SIZE中，由于对齐的缘故，一个关键字最少需要占用两个指针的大小。
+     * 在这个前提下，来估计所需要的bucket最小数量，即考虑元素越小，从而一个bucket容纳的数量就越多，
+     * 自然使用的bucket的数量就越少，但最少也得有一个。
+     */
     start = nelts / (bucket_size / (2 * sizeof(void *)));
     start = start ? start : 1;
-
+    /*
+     * 调整max_size，即bucket数量的最大值，依据是：bucket超过10000，且总的bucket数量与元素个数比值小于100
+     * 那么bucket最大值减少1000，至于这几个判断值的由来，尚不清楚，经验值或者理论值。
+     */
     if (hinit->max_size > 10000 && nelts && hinit->max_size / nelts < 100) {
         start = hinit->max_size - 1000;
     }
 
+    //size从start开始，逐渐加大bucket的个数，直到恰好满足所有具有相同hash％size的元素都在同一个bucket，这样hash的size就能确定了
     for (size = start; size <= hint->max_size; size++) {
 
+        //每次递归新的size的时候需要将旧test的数据清空
         ngx_memzero(test, size * sizeof(u_short));
 
         for (n = 0; n < nelts; n++) {
@@ -304,11 +320,12 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
 
             //计算key和names中所有name长度，并保存在test[key]中
             key = names[n].key_hash % size;
+            //开始叠加每个bucket的size
             test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&names[n]));
 
-            //这里终于用到了bucket_size，大于这个值，则说明这个size不合适啊goto next，调整下桶的数目
+            //这里终于用到了bucket_size，大于这个值，则说明这个size不合适啊goto next，调整一下桶的数目
+            //如果某个bucket的size超过了bucket_size，那么加大bucket的个数，使得元素分布更分散一些
             if (test[key] > (u_short) bucket_size) {
-                //若超过了桶的大小，则到下一个桶重新计算
                 goto next;
             }
         }
@@ -358,8 +375,13 @@ found:
         len += test[i];
     }
 
+    /*
+     * 向内存池申请bucket元素所占的内存空间，
+     * 注意：若前面没有申请hash表头结构，则在这里将和ngx_hash_wildcard_t一起申请
+     */
     if (hinit->hash == NULL) {
-        //在内存池中分配hash头及buckets数组(size个ngx_hash_elt_t*结构)
+        //在内存池中分配hash头及buckets数组(size个ngx_hash_elt_t*结构  桶的个数)
+        //值得注意的是, 这里申请的并不是单纯的基本哈希表结构的内存, 而是包含基本哈希表的通配符哈希表
         hinit->hash = ngx_pcalloc(hinit->pool, sizeof(ngx_hash_wildcard_t)
                                                 + size * sizeof(ngx_hash_elt_t *));
         if (hinit->hash == NULL) {
@@ -440,6 +462,19 @@ found:
     return NGX_OK;
 }
 
+/*
+这里的传入参数names数组是经过处理后的字符串数组。对于字符串数组"*.test.yexin.com"、".yexin.com"、"*.example.com"、"*.example.org"、
+ ".yexin.org"处理完成之后就变成了 "com.yexin.test."、"com.yexin"、"com.example."、"org.example."、"org.yexin"
+遍历数组中元素找出当前字符串的第一个key字段并放入curr_names数组把所有字符串"com.yexin.test."、"com.yexin"、"com.example."、
+ "org.example."、"org.yexin"的第一个key字段提取出来，那么只有两个不相同的字段“com”、"org"
+
+ 可以参考http://blog.csdn.net/a987073381/article/details/52357990
+
+ 对于“*.abc.com”将会构造出2个hash表，第一个hash表中有一个key为com的表项，该表项的value包含有指向第二个hash表的指针，
+ 而第二个hash表中有一个表项abc，该表项的value包含有指向*.abc.com对应的value的指针。那么查询的时候，比如查询www.abc.com的时候，
+ 先查com，通过查com可以找到第二级的hash表，在第二级hash表中，再查找abc，依次类推，直到在某一级的hash表中查到的表项对应的value对应
+ 一个真正的值而非一个指向下一级hash表的指针的时候，查询过程结束
+ */
 ngx_int_t
 ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
 {
@@ -485,12 +520,14 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t
         name->key_hash = hinit->key(name->key.data, name->key.len);
         name->value = names[n].value; //如果有子hash，则value会在后面指向子hash
 
+        //从子dot开始，比如com.xie ,此时len 为.  ++ 之后就从x开始
         dot_len = len + 1;
 
         if (dot) {
             len++;
         }
 
+        //每次清零
         next_names.nelts = 0;
 
         //如果names[n] dot后还有剩余关键字，将剩余关键字放入next_names中
@@ -500,14 +537,15 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t
                 return NGX_ERROR;
             }
 
+            //com.xie 把xie 存入next_name
             next_name->key.len = names[n].key.len - len;
-            next_name->key.data = names[n].key.dta + len;
+            next_name->key.data = names[n].key.data + len;
             next_name->key_hash = 0;
             next_name->value = names[n].value;
         }
 
         //如果上面搜索到的关键字没有dot，从n+1遍历names，将关键字比它长的全部放入next_name
-
+        //搜索后面有没有和当前元素相同key字段的元素
         for (i = n + 1; i < nelts; i++) {
             //前len个关键字相同
             if (ngx_strncmp(names[n].key.data, names[i].key.data, len) != 0) {
@@ -519,7 +557,7 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t
                 break;
             }
 
-
+            //如果有则把除去当前key字段的剩余字符串装入该数组
             next_name = ngx_array_push(&next_names);
             if (next_name == NULL) {
                 return NGX_ERROR;
@@ -532,6 +570,7 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t
             next_name->value = names[i].value;
         }
 
+        //如果next_names数组中有元素，递归处理该元素
         if (next_names.nelts) {
 
             h = *hinit;
@@ -539,7 +578,7 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t
 
 
             if (ngx_hash_wildcard_init(&h, (ngx_hash_key_t *) next_names.elts,
-                                       next_names.nelts)//递归，创建一个新的哈西表
+                                       next_names.nelts)//递归，创建一个新的哈希表
                 != NGX_OK)
             {
                 return NGX_ERROR;
@@ -553,8 +592,10 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t
             }
 
             //并将当前value值指向新的hash表
-            name->value = (void *) ((uintptr_t) wdc | (dot ? 3 : 2));
+            //将后缀组成的下一级hash地址作为当前字段的value保存下来
+            name->value = (void *) ((uintptr_t) wdc | (dot ? 3 : 2)); //2只有在后缀通配符的情况下才会出现
         } else if (dot) {//表示后面已经没有子hash了,value指向具体的key-value中的value字符串
+            //只有一个，而且不是后缀通配符
             name->value = (void *) ((uintptr_t) name->value | 1);
         }
 
