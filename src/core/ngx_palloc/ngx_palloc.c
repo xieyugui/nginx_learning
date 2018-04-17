@@ -152,7 +152,7 @@ ngx_pnalloc(ngx_pool_t *pool, size_t size)
 
 /**
  *
- * 在分配小块内存时，就算不断的寻找是否存在符合条件的内存大小，若存在，则将内存块地址返回，
+ * 在分配小块内存时，就是不断的寻找是否存在符合条件的内存大小，若存在，则将内存块地址返回，
  * 并将d.last往后移动分配的内存大小，即完成了内存分配。若不存在，则利用ngx_palloc_block方法去生成一个新的内存块。
  */
 static ngx_inline void *
@@ -171,6 +171,7 @@ ngx_palloc_small(ngx_pool_t *pool, size_t size, ngx_uint_t align)
             m = ngx_align_ptr(m, NGX_ALIGNMENT);
         }
 
+        //判断剩余的大小是否满足size
         if ((size_t) (p->d.end - m) >= size) {
             p->d.last = m + size;
 
@@ -195,6 +196,7 @@ ngx_palloc_block(ngx_pool_t *pool, size_t size)
     size_t psize;
     ngx_pool_t *p, *new;
 
+    //当前内存池大小
     psize = (size_t) (pool->d.end - (u_char *) pool);
     /* 申请新的块 */
     m = ngx_memalign(NGX_POOL_ALIGNMENT, psize, pool->log);
@@ -222,7 +224,7 @@ ngx_palloc_block(ngx_pool_t *pool, size_t size)
       */
     for (p = pool->current; p->d.next; p = p->d.next) {
         if (p->d.failed++ > 4) {
-            pool->current = p->d.next;
+            pool->current = p->d.next;  //失败4次以上移动current指针
         }
     }
 

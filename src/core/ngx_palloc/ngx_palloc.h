@@ -6,6 +6,11 @@
 * @file:      ngx_palloc.h
 * @date:      2017/11/28 下午4:14
 * @desc:
+ *
+ * https://raw.githubusercontent.com/MeteorKL/nginx/master/ngx_pool.png
+ *
+ * 具体图可以参考该作者画的
+ *
 */
 
 //
@@ -24,8 +29,10 @@
 //pool 默认大小
 #define NGX_DEFAULT_POOL_SIZE (16 * 1024)
 
+// 内存池的内存对齐值，即分配的内存大小是该值的倍数
 #define NGX_POOL_ALIGNMENT 16
 
+//TODO  ????
 #define NGX_MIN_POOL_SIZE ngx_align((sizeof(ngx_pool_t) + 2 * sizeof(ngx_pool_large_t)),NGX_POOL_ALIGNMENT)
 
 typedef void (*ngx_pool_cleanup_pt)(void *data);
@@ -104,9 +111,6 @@ void ngx_pool_cleanup_file(void *data);
 
 //从文件系统删除文件，data 指针指向一个 ngx_pool_cleanup_file_t 类型的数据
 void ngx_pool_delete_file(void *data);
-
-
-
 
 
 #endif //NGX_PALLOC_NGX_PALLOC_H
