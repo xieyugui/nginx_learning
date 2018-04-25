@@ -16,9 +16,12 @@
 #include <ngx_core.h>
 #include "ngx_palloc.h"
 
+//在分配小块内存
 static ngx_inline void *ngx_palloc_small(ngx_pool_t *pool, size_t size,
     ngx_uint_t align);
+//申请一个新的缓存池 ngx_pool_t
 static void *ngx_palloc_block(ngx_pool_t *pool, size_t size);
+//当分配的内存块大小超出pool->max限制的时候,需要分配在pool->large上
 static void *ngx_palloc_large(ngx_pool_t *pool, size_t size);
 
 ngx_pool_t *
@@ -46,6 +49,7 @@ ngx_create_pool(size_t size, ngx_log_t *log)
     p->d.failed = 0;
 
     size = size - sizeof(ngx_pool_t);
+    // NGX_MAX_ALLOC_FROM_POOL 每次能从pool分配的最大内存块大小
     p->max = (size < NGX_MAX_ALLOC_FROM_POOL) ? size : NGX_MAX_ALLOC_FROM_POOL;
 
     /* 只有缓存池的父节点，才会用到下面的这些  ，子节点只挂载在p->d.next,并且只负责p->d的数据内容*/
@@ -276,6 +280,7 @@ ngx_palloc_large(ngx_pool_t *pool, size_t size)
     return p;
 }
 
+//类似于ngx_palloc_large 不过不再执行large链表尾部添加逻辑
 void *
 ngx_pmemalign(ngx_pool_t *pool, size_t size, size_t alignment)
 {
@@ -369,6 +374,7 @@ ngx_pool_cleanup_add(ngx_pool_t *p, size_t size)
         c->data = NULL;
     }
 
+    //添加到链表首位
     c->handler = NULL;
     c->next = p->cleanup;
     p->cleanup = c;

@@ -12,6 +12,8 @@
  * http://blog.csdn.net/u012062760/article/details/48392187
  * http://blog.csdn.net/livelylittlefish/article/details/6636229
  * https://github.com/cc1989/nginx_report/blob/master/nginx_test/hash/ngx_hash_wildcard_t_test.c
+ *
+ * http://ialloc.org/posts/2014/06/06/ngx-notes-hashtable-1/
 */
 
 //

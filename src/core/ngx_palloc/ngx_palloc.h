@@ -62,8 +62,8 @@ typedef struct {
 } ngx_pool_data_t;
 
 struct ngx_pool_s {
-    ngx_pool_data_t d; // 数据区
-    size_t  max; // 内存池的最大存储空间
+    ngx_pool_data_t d; // 内存池的数据块
+    size_t  max; // 内存池数据块的最大值
     ngx_pool_t *current;  // 内存池
     ngx_chain_t *chain; //缓冲区链表
     ngx_pool_large_t *large; // 用于存储大数据，链表结构
