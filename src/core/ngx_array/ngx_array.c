@@ -23,7 +23,7 @@ ngx_array_create(ngx_pool_t *p, ngx_uint_t n, size_t size)
     if (a == NULL) {
         return NULL;
     }
-
+    //先分配好ngx_array_t的内存，然后再分配n * size 大小的内存用作存储数组具体数据
     if(ngx_array_init(a, p, n, size) != NGX_OK) {
         return NULL;
     }

@@ -121,8 +121,8 @@ typedef struct {
     ngx_chain_t *out; //还没有发送出去的待发送数据的头部
     //ngx_http_upstream_connect中初始化赋值u->writer.last = &u->writer.out; last指针指向out，
     // 调用ngx_chain_writer后last指向存储在out中cl的最后一个节点的NEXT处
-    ngx_chain_t **last;//永远指向最优一个ngx_chain_t的next字段的地址。这样可以通过这个地址不断的在后面增加元素。
-    ngx_connection_t *connection;//我这个输出链表对应的连接
+    ngx_chain_t **last;//永远指向最后一个ngx_chain_t的next字段的地址。这样可以通过这个地址不断的在后面增加元素。
+    ngx_connection_t *connection;//这个输出链表对应的连接
     ngx_pool_t *pool; //等于request对应的pool，见ngx_http_upstream_init_request
     off_t limit;
 } ngx_chain_writer_ctx_t;

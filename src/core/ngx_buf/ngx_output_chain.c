@@ -47,6 +47,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
     ngx_int_t rc, last;
     ngx_chain_t *cl, *out, **last_out;
 
+    //ctx的将要发送的chain和未发送的chain 都为空的话
     if(ctx->in == NULL && ctx->busy == NULL)
     {
         /*
@@ -58,7 +59,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
         if (in == NULL) {
             return ctx->output_filter(ctx->filter_ctx, in);
         }
-        //如果in 为最后一块数据，且不需要复制，则直接调用output_filter
+        //如果in 为最后一块数据，且不需要复制，则直接调用output_filter 发送出去就行
         if (in->next == NULL && ngx_output_chain_as_is(ctx, in->buf))
         {
             return ctx->output_filter(ctx->filter_ctx, in);
@@ -82,7 +83,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
         while (ctx->in) {
             //取得当前chain的buf大小
             bsize = ngx_buf_size(ctx->in->buf);
-            //跳过bsize为0的buf
+            //跳过bsize为0且不是特殊的buf
             if(bsize == 0 && !ngx_buf_special(ctx->in->buf)) {
                 ctx->in = ctx->in->next;
 
@@ -135,6 +136,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
                 return rc;
             }
 
+            //先把out 数据发送出去(break 跳出while循环到for循环的逻辑)，等待下次调用
             if(rc == NGX_AGAIN) {
                 if(out) {
                     break;
@@ -143,6 +145,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
                 return rc;
             }
 
+            //如果当前的将要发送的buf的数据已经被处理干净了，则指向下一个将要发送的buf
             if(ngx_buf_size(ctx->in->buf) == 0) {
                 ctx->in = ctx->in->next;
             }
@@ -152,7 +155,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
                 return NGX_ERROR;
             }
 
-            //链接chain到out
+            //将最终要发送的数据链接到out
             cl->buf = ctx->buf;
             cl->next = NULL;
             *last_out = cl;
@@ -160,6 +163,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
             ctx->buf = NULL;
         }
 
+        //TODO ??
         if (out == NULL && last != NGX_NONE) {
 
             if (ctx->in) {
@@ -186,6 +190,7 @@ ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
 {
     ngx_uint_t sendfile;
     //是否为specialbuf，是的话返回1,也就是不用拷贝
+    //返回该buf是否是一个特殊的buf，只含有特殊的标志和没有包含真正的数据
     if(ngx_buf_special(buf)) {
         return 1;
     }
@@ -269,10 +274,12 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
         并且文件大小大于directio xxx中的大小 */
     ctx->directio = 1;
 
+    //内存对齐
     size = (size_t) (in->file_pos - (in->file_pos & ~(ctx->alignment - 1)));
 
     if (size == 0) {
 
+        //分配的Buf 大小超过 buf的最大的size
         if(bsize >= (off_t) ctx->bufs.size) {
             return NGX_DECLINED;
         }
@@ -410,14 +417,14 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
     }
 
 #endif
-
+    //拷贝的资源在内存中，还是在磁盘文件中
     if (ngx_buf_in_memory(src)) {
         ngx_memcpy(dst->pos, src->pos, (size_t) size);
         src->pos += (size_t) size;
         dst->last += (size_t) size;
 
         if (src->in_file) {
-
+            //如果目标buf 也属于文件类型的话
             if (sendfile) {
                 dst->in_file = 1;
                 dst->file = src->file;
@@ -433,7 +440,7 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
         } else {
             dst->in_file = 0;
         }
-
+        //如果src 所有数据都已经拷贝结束
         if (src->pos == src->last) {
             dst->flush = src->flush;
             dst->last_buf = src->last_buf;
@@ -481,6 +488,7 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
         } else
 #endif
         {
+            //从文件中读取指定大小的内容
             n = ngx_read_file(src->file, dst->pos, (size_t) size,
                               src->file_pos);
         }
@@ -509,6 +517,7 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
             return (ngx_int_t) n;
         }
 
+        //如果读取的和指定要读取的大小不匹配
         if (n != size) {
             ngx_log_error(NGX_LOG_ALERT, ctx->pool->log, 0,
                           ngx_read_file_n " read only %z of %O from \"%s\"",

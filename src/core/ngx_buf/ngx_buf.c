@@ -206,12 +206,12 @@ ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free, ngx_chain_t **busy,
     while (*busy) {
         cl = *busy;
 
-        /* 如果buf不为空，则继续遍历 */
+        /* 如果buf不为空，则继续遍历  待处理的数据是否都已经处理完成*/
         if (ngx_buf_size(cl->buf) != 0) {
             break;
         }
 
-        /* 如果标识一样，则释放这个BUF */
+        /* 如果标识一样，则释放这个BUF  注意 这里的释放与下面回收意义不一样*/
         if (cl->buf->tag != tag) {
             *busy = cl->next;
             ngx_free_chain(p, cl);
@@ -230,6 +230,7 @@ ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free, ngx_chain_t **busy,
 }
 
 //限速传输,返回总共传输了多少
+//合并in链中与第一个节点相邻的文件buf，并且合并长度限制在limit范围内
 off_t
 ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit)
 {
@@ -274,7 +275,7 @@ ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit)
     return total;
 }
 
-//计算本次调用ngx_writev发送出去的send字节在in链表中所有数据的那个位置
+//根据已成功发送数据的大小sent更新in链，并返回下一次需要处理的节点
 ngx_chain_t *
 ngx_chain_update_sent(ngx_chain_t *in, off_t sent)
 {
@@ -282,6 +283,7 @@ ngx_chain_update_sent(ngx_chain_t *in, off_t sent)
 
     for (; in; in = in->next) {
         //又遍历一次这个链接，为了找到那块只成功发送了一部分数据的内存块，从它继续开始发送。
+        //返回该buf是否是一个特殊的buf，只含有特殊的标志和没有包含真正的数据
         if (ngx_buf_special(in->buf)) {
             continue;
         }

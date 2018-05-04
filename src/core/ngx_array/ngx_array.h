@@ -46,7 +46,7 @@ ngx_array_init(ngx_array_t *array, ngx_pool_t *pool, ngx_uint_t n, size_t size)
     array->size = size;
     array->nalloc = 0;
     array->pool = pool;
-
+    //数组数据起始地址
     array->elts = ngx_palloc(pool, size * n);
 
     if(array->elts == NULL) {
