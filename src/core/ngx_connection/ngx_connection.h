@@ -10,6 +10,8 @@
  * https://github.com/xieyugui/reading-code-of-nginx-1.9.2/blob/master/nginx-1.9.2/src/core/ngx_connection.h
  * https://github.com/chronolaw/annotated_nginx/blob/master/nginx/src/core/ngx_connection.h
  * http://nginx.org/en/docs/http/ngx_http_core_module.html  查看官网 connection 配置说明
+ *
+ * https://ivanzz1001.github.io/records/post/nginx/2018/02/28/nginx-source_part35_3
 */
 
 //
@@ -38,6 +40,7 @@ struct ngx_listening_s {
 
     int type;// socket的类型，SOCK_STREAM 表示TCP
 
+    //TCP实现监听时的backlog队列，它表示允许正在通过三次握手建立tcp连接但还没有任何进程开始处理的连接最大个数
     int backlog;// TCP的backlog队列，即等待连接的队列
     int rcvbuf; // 内核接收缓冲区大小
     int sndbuf;// 内核发送缓冲区大小
@@ -48,17 +51,24 @@ struct ngx_listening_s {
 #endif
 
     // 重要函数，tcp连接成功时的回调函数
-    // 对应于http模块是ngx_http_request.c:ngx_http_init_connection
-    // stream模块是ngx_stream_init_connection
+    /* handler of accepted connection （对新建立连接的处理方法）
+     * 对于http连接，其handler指定为ngx_http_init_connection
+     * 对于mail连接，其handler指定为ngx_mail_init_connection
+     * 对于stream连接，其handler指定为ngx_stream_init_connection
+     */
     ngx_conf_handler_pt handler;
 
     // 用于解决多个server监听相同端口的情况
     void *servers;
 
-    ngx_log_t log;
-    ngx_log_t *logp;
+    ngx_log_t log;//log是自身携带的一个日志，主要用于各个模块的日志信息格式化
+    ngx_log_t *logp;//通过error log命令配置的日志
 
-    size_t pool_size;
+    size_t pool_size; //要为新的tcp连接建立内存池的话，内存池的大小为pool_size
+
+    /* should be here because of the AcceptEx() preread
+     * 主要是为了支持Windows套接字AcceptEx()函数接受一个新的连接
+     */
     size_t post_accept_buffer_size;
     /*
     TCP_DEFER ACCEPT选项将在建立TCP连接成功且接收到用户的请求数据后，才向对监听套接字感兴趣的进程发送事件通知，而连接建立成功后，
@@ -66,57 +76,60 @@ struct ngx_listening_s {
     */ //ls->post_accept_timeout = cscf->client_header_timeout;  "client_header_timeout"设置
     ngx_msec_t post_accept_timeout;
 
-    // 链表指针，多个ngx_listening_t组成一个单向链表
+    //指向前一个ngx_listening_t结构
     ngx_listening_t *previous;
 
-    // 监听端口对应的连接对象
+    //当前监听句柄对应的connection结构
     // 从cycle的内存池分配，但只用了read事件
     ngx_connection_t *connection;
 
-    // worker进程的序号，用于reuseport
+    //指定当前listen句柄是属于第几个worker进程
     ngx_uint_t worker;
 
     //下面这些标志位一般在ngx_init_cycle中初始化赋值
     /*
     标志位，为1则表示在当前监听句柄有效，且执行ngx- init—cycle时不关闭监听端口，为0时则正常关闭。该标志位框架代码会自动设置
     */
-    unsigned  open:1;
+    unsigned  open:1; //为1表示监听句柄有效，为0表示正常关闭
     /*
       标志位，为1表示使用已有的ngx_cycle_t来初始化新的ngx_cycle_t结构体时，不关闭原先打开的监听端口，这对运行中升级程序很有用，
       remaln为o时，表示正常关闭曾经打开的监听端口。该标志位框架代码会自动设置，参见ngx_init_cycle方法
       */
     unsigned  remain:1;
 
+    /* 1:跳过设置当前ngx_listening_t结构体中的套接字    0：正常初始化 */
     unsigned  ignore:1;
 
+    /* already bound 置1表示已绑定*/
     unsigned bound:1;
     /* 表示当前监听句柄是否来自前一个进程（如升级Nginx程序），如果为1，则表示来自前一个进程。一般会保留之前已经设置好的套接字，不做改变 */
     unsigned inherited:1; // 从前一个nginx进程继承过来的
     unsigned nonblocking_accept:1;
-    unsigned listen:1;  // 是否已经被监听
-    unsigned nonblocking:1;
+    unsigned listen:1;  // 当前结构体对应的socket已经被监听
+    unsigned nonblocking:1;  //是否阻塞，没用。因为nginx是异步非阻塞的
     unsigned shared:1;  //线程或者进程之间共享
-    unsigned addr_ntop:1;
-    unsigned wildcard:1;
+    unsigned addr_ntop:1; //为1的话，表示连接建立后，所建立连接的IP地址的字符串表示形式需要自行设置
+    unsigned wildcard:1; //表示当前监听句柄是否支持通配：主要是通配UDP等接受数据
 
 #if (NGX_HAVE_INET6)
     unsigned            ipv6only:1;
 #endif
 
     // 1.10新增reuseport支持，可以不再使用共享锁负载均衡，性能更高
-    // 是否使用reuseport
+    // 是否使用reuseport  内核支持同一个端口可以有多个socket同时进行监听而不报错误
+    //新版本nginx 关闭竞争锁功能  https://www.zhihu.com/question/51618274/answer/126729306
     unsigned reuseport:1;
     // 是否已经设置了reuseport socket选项
     // ngx_open_listening_sockets
-    unsigned add_reuseport:1;
-    unsigned keepalive:2;
+    unsigned add_reuseport:1; //是否将一个端口不复用的socket转变成端口复用的socket
+    unsigned keepalive:2; //是否为此监听socket设置keepalive选项
 
     // 延迟接受请求，只有真正收到数据内核才通知nginx，提高性能
-    unsigned            deferred_accept:1;
-    unsigned            delete_deferred:1;
-    unsigned            add_deferred:1;
+    unsigned            deferred_accept:1; //当前socket延迟接受的状态
+    unsigned            delete_deferred:1; //当前socket是否需要被取消延迟接受
+    unsigned            add_deferred:1; //当前socket是否需要被设置为延迟接受
 #if (NGX_HAVE_DEFERRED_ACCEPT && defined SO_ACCEPTFILTER)
-    char               *accept_filter;
+    char               *accept_filter;  //代表accept filter参数
 #endif
 #if (NGX_HAVE_SETFIB)
     int                 setfib;
@@ -125,7 +138,7 @@ struct ngx_listening_s {
 // 是否支持tcp fast open
 // 可以优化tcp三次握手的延迟，提高响应速度
 #if (NGX_HAVE_TCP_FASTOPEN)
-    int                 fastopen;
+    int                 fastopen; //-1: 表示不支持快速打开 0：暂时未开启快速打开； 1：：表示开启了块打开
 #endif
 
 };
@@ -208,19 +221,21 @@ struct ngx_connection_s {
      listen过程中，指向原始请求ngx_http_connection_t(ngx_http_init_connection ngx_http_ssl_handshake),
      接收到客户端数据后指向ngx_http_request_t(ngx_http_wait_request_handler)
      http2协议的过程中，在ngx_http_v2_connection_t(ngx_http_v2_init)
- */
+
+     指向任意的连接上下文类型。通常其是指向一个建立在连接上的更高层对象，比如一个http请求或者stream session。
+     而在连接未建立时，data域一般充当连接链表中的next指针
+    */
     void *data;
     //如果是文件异步i/o中的ngx_event_aio_t，则它来自ngx_event_aio_t->ngx_event_t(只有读),如果是网络事件中的event,
     // 则为ngx_connection_s中的event(包括读和写)
     ngx_event_t *read;//连接对应的读事件   赋值在ngx_event_process_init，空间是从ngx_cycle_t->read_event池子中获取的
     ngx_event_t *write;//连接对应的写事件，存储在ngx_cycle_t::write_events
 
-    // 连接的socket描述符（句柄）
-    // 需使用此描述符才能收发数据
+    //连接对应的socket句柄
     ngx_socket_t fd;
 
-    // 接收数据的函数指针,直接接收网络字符流的方法
-    ngx_recv_pt  recv;
+    /*如下是针对该连接的IO操作*/
+    ngx_recv_pt  recv; // 接收数据的函数指针,直接接收网络字符流的方法
     ngx_send_pt  send; //直接发送网络字符流的方法
     //以ngx_chain_t链表为参数来接收网络字符流的方法
     ngx_recv_chain_pt recv_chain;
@@ -238,38 +253,36 @@ struct ngx_connection_s {
     // 发送后需要把已经发送过的节点都回收，供以后复用
     ngx_send_chain_pt send_chain;
 
-    // 连接对应的ngx_listening_t监听对象
-    // 通过这个指针可以获取到监听端口相关的信息
-    // 反过来可以操作修改监听端口
+    //这个链接对应的listening_t监听对象，此链接由ngx_listening_t监听的事件建立
     ngx_listening_t *listening;
 
-    // 连接上已经发送的字节数
-    // ngx_send.c里发送数据成功后增加
-    // 在32位系统里最大4G，可以定义宏_FILE_OFFSET_BITS=64
+    //这个连接已经发送出去的字节数
     off_t sent;
 
-    ngx_log_t *log;
+    ngx_log_t *log; //用于记录日志
 
     // 连接的内存池
-    // 默认大小是256字节
+    //在accept一个新连接的时候,会创建一个内存池,而这个连接结束时候,会销毁一个内存池.
+    //这里所说的连接是成功建立的tcp连接.内存池的大小由pool_size决定
+    //所有的ngx_connect_t结构体都是预分配的
     ngx_pool_t *pool;
 
     // socket的类型，SOCK_STREAM 表示TCP，
-    int type;
+    int type; //类型，一般与ngx_listening_s.type字段含义相同
 
     // 客户端的sockaddr
     struct sockaddr *sockaddr;
     socklen_t socklen;
     ngx_str_t addr_text;// 客户端的sockaddr，文本形式
 
-    ngx_str_t proxy_protocol_addr;
+    ngx_str_t proxy_protocol_addr; //此处指定代理协议的地址
     in_port_t proxy_protocol_port;
 
     // 给https协议用的成员
     // 定义在event/ngx_event_openssl.h
     // 里面包装了OpenSSL的一些定义
 #if (NGX_SSL || NGX_COMPAT)
-    ngx_ssl_connection_t  *ssl;
+    ngx_ssl_connection_t  *ssl; //连接所关联的SSL上下文
 #endif
 
     // 本地监听端口的socketaddr，也就是listening中的sockaddr
@@ -288,7 +301,7 @@ struct ngx_connection_s {
 
     /*
        连接使用次数。ngx_connection t结构体每次建立一条来自客户端的连接，或者用于主动向后端服务器发起连接时（ngx_peer_connection_t也使用它），
-        number都会加l
+        number都会加1
      */
     ngx_atomic_uint_t   number;
 
@@ -338,25 +351,25 @@ struct ngx_connection_s {
       如果在post_accept_timeout这么长事件内没有数据到来则超时，开始处理关闭TCP流程*/
     //当ngx_event_t->timedout置1的时候，该置也同时会置1，参考ngx_http_process_request_line  ngx_http_process_request_headers
     //在ngx_http_free_request中如果超时则会设置SO_LINGER来减少time_wait状态
-    unsigned timedout:1; // 是否已经超时
-    unsigned error:1;// 是否已经出错
+    unsigned timedout:1; //连接超时
+    unsigned error:1;//连接处理过程中出现错误
 
     /*
       标志位，为1时表示连接已经销毁。这里的连接指是的TCP连接，而不是ngx_connection t结构体。当destroyed为1时，ngx_connection_t结
       构体仍然存在，但其对应的套接字、内存池等已经不可用
       */
-    unsigned destroyed:1;  // 是否tcp连接已经被销毁
+    unsigned destroyed:1;  //标识此链接已经销毁,内存池,套接字等都不可用
 
-    unsigned idle:1; //为1时表示连接处于空闲状态，如keepalive请求中丽次请求之间的状态
+    unsigned idle:1; //为1时表示连接处于空闲状态，如keepalive请求中数次请求之间的状态
     unsigned            reusable:1; //为1时表示连接可重用，它与上面的queue字段是对应使用的
 
     // tcp连接已经关闭
     // 可以回收复用
     // 手动置这个标志位可以强制关闭连接
-    unsigned            close:1;
+    unsigned            close:1; //为1，表示连接关闭
     unsigned            shared:1;
 
-    unsigned            sendfile:1;// 正在发送文件
+    unsigned            sendfile:1;// 正在将文件中的数据发往另一端
 
     /*
     标志位，如果为1，则表示只有在连接套接字对应的发送缓冲区必须满足最低设置的大小阅值时，事件驱动模块才会分发该事件。这与上文
@@ -379,6 +392,7 @@ struct ngx_connection_s {
 };
 
 //ngx_set_connection_log(r->connection, clcf->error_log)
+//用于设置一个连接所对应的日志操作
 #define ngx_set_connection_log(c, l)                                         \
                                                                              \
     c->log->file = l->file;                                                  \
@@ -391,41 +405,48 @@ struct ngx_connection_s {
 
 // http/ngx_http.c:ngx_http_add_listening()里调用
 // ngx_stream.c:ngx_stream_optimize_servers()里调用
-// 添加到cycle的监听端口数组
+// 创建一个监听socket
 ngx_listening_t *ngx_create_listening(ngx_conf_t *cf, struct sockaddr *sockaddr,
     socklen_t socklen);
 
 // 1.10新函数，专为reuseport使用
 //reuseport的意思：内核支持同一个端口可以有多个socket同时进行监听而不报错误
+// 根据ls复制监听socket
 ngx_int_t ngx_clone_listening(ngx_conf_t *cf, ngx_listening_t *ls);
+
+// 该函数从参数cycle(后续调用ngx_init_cycle()函数后全局变量ngx_cycle会指向该参数)的listening数组中逐一
+//    对每个元素(ngx_listening_t结构)进行初始化，即初始化除fd字段外的其他的字段。
 ngx_int_t ngx_set_inherited_sockets(ngx_cycle_t *cycle);
 
 // ngx_cycle.c : init_cycle()里被调用
-// 创建socket, bind/listen
+// 创建socket, bind/listen  打开监听socket
 ngx_int_t ngx_open_listening_sockets(ngx_cycle_t *cycle);
 
 // ngx_init_cycle()里调用，在ngx_open_listening_sockets()之后
-// 配置监听端口的rcvbuf/sndbuf等参数，调用setsockopt()
+// 配置监听端口的rcvbuf/sndbuf等参数，调用setsockopt()  配置监听socket
 void ngx_configure_listening_sockets(ngx_cycle_t *cycle);
 
 // 在ngx_master_process_exit里被调用(os/unix/ngx_process_cycle.c)
-// 遍历监听端口列表，逐个删除监听事件
+// 遍历监听端口列表，逐个删除监听事件 关闭监听socket
 void ngx_close_listening_sockets(ngx_cycle_t *cycle);
 
 // 关闭连接，删除epoll里的读写事件
 // 释放连接，加入空闲链表，可以再次使用
 void ngx_close_connection(ngx_connection_t *c);
 
-// 1.10新函数
+// 1.10新函数  关闭所有空闲连接
 // 检查cycle里的连接数组，如果连接空闲则设置close标志位，关闭
 void ngx_close_idle_connection(ngx_cycle_t *cycle);
+//获得一个连接的本地地址
 ngx_int_t ngx_connection_local_sockadd(ngx_connection_t *c, ngx_str_t *s,
                                        ngx_uint_t port);
 ngx_int_t ngx_tcp_nodelay(ngx_connection_t *c);
+//打印连接错误的日志信息
 ngx_int_t ngx_connection_error(ngx_connection_t *c, ngx_err_t err, char *text);
 
 // 从全局变量ngx_cycle里获取空闲链接，即free_connections链表
 // 如果没有空闲连接，调用ngx_drain_connections释放一些可复用的连接
+// 获取一个connection对象
 ngx_connection_t *ngx_get_connection(ngx_socket_t s, ngx_log_t *log);
 
 // 释放一个连接，加入空闲链表

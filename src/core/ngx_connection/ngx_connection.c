@@ -50,7 +50,7 @@ ngx_create_listening(ngx_conf_t *cf, struct sockaddr *sockaddr, socklen_t sockle
     struct sockaddr *sa;
     u_char text[NGX_SOCKADDR_STRLEN];
 
-    // 添加到cycle的监听端口数组
+    // 从cycle的listening数组中获取一个空闲的
     ls = ngx_array_push(&cf->cycle->listening);
     if (le == NULL) {
         return NULL;
@@ -88,7 +88,7 @@ ngx_create_listening(ngx_conf_t *cf, struct sockaddr *sockaddr, socklen_t sockle
         case AF_INET:
             ls->addr_text_max_len = NGX_INET_ADDRSTRLEN;
             break;
-        default:
+        default://按照最大端口来估值  ipv4 255.255.255.255:65535
             ls->addr_text_max_len = NGX_SOCKADDR_STRLEN;
             break;
     }
@@ -171,7 +171,8 @@ ngx_clone_listening(ngx_conf_t *cf, ngx_listening_t *ls)
 }
 
 // 根据传递过来的socket描述符，使用系统调用获取之前设置的参数
-// 填入ngx_listeing_t结构体
+// 该函数从参数cycle(后续调用ngx_init_cycle()函数后全局变量ngx_cycle会指向该参数)的listening数组中逐一
+//    对每个元素(ngx_listening_t结构)进行初始化，即初始化除fd字段外的其他的字段。
 ngx_int_t
 ngx_set_inherited_sockets(ngx_cycle_t *cycle)
 {
@@ -182,6 +183,7 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
 #if (NGX_HAVE_DEFERRED_ACCEPT || NGX_HAVE_TCP_FASTOPEN)
     ngx_err_t                  err;
 #endif
+    //SO_ACCEPTFILTER 接受过滤器  基本与deferred_accept 作用一样
 #if (NGX_HAVE_DEFERRED_ACCEPT && defined SO_ACCEPTFILTER)
     struct accept_filter_arg   af;
 #endif
@@ -237,6 +239,7 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
                 ngx_log_error(NGX_LOG_CRIT, cycle->log, ngx_socket_errno,
                               "the inherited socket #%d has "
                                       "an unsupported protocol family", ls[i].fd);
+                //直接忽视
                 ls[i].ignore = 1;
                 continue;
         }
@@ -489,7 +492,7 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
                 continue;
             }
 
-            // 创建socket
+            // 创建socket 当protocol为0时，会自动选择type类型对应的默认协议
             s = ngx_socket(ls[i].sockaddr->sa_family, ls[i].type, 0);
 
 
@@ -550,7 +553,7 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
             }
 #endif
 
-
+//IPV6_V6ONLY 只使用IPV6（因为IPV6 会同时监听IPV4 IPV6，会导致原先的监听IPV4冲突）
 #if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
 
             if (ls[i].sockaddr->sa_family == AF_INET6) {
@@ -570,7 +573,6 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
 #endif
 
             /* TODO: close on exit */
-
             if (!(ngx_event_flags & NGX_USE_IOCP_EVENT)) {
 
                 // 设置为nonblocking，使用FIONBIO
@@ -697,7 +699,7 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
 
         ngx_log_error(NGX_LOG_NOTICE, log, 0,
                       "try again to bind() after 500ms");
-
+        //sleep sleep....
         ngx_msleep(500);
 
     }
@@ -762,7 +764,7 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
         }
 
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
-        //空闲
+        //空闲 keepalive 之后多久没发送数据
         if (ls[i].keepidle) {
             value = ls[i].keepidle;
 
@@ -870,7 +872,7 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
 #if (NGX_HAVE_DEFERRED_ACCEPT)
 // 这个是freebsd的设置
 #ifdef SO_ACCEPTFILTER
-
+        //当前socket是否需要被取消延迟接受
         if (ls[i].delete_deferred) {
             if (setsockopt(ls[i].fd, SOL_SOCKET, SO_ACCEPTFILTER, NULL, 0)
                 == -1)
@@ -892,7 +894,7 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
 
             ls[i].deferred_accept = 0;
         }
-
+        //当前socket是否需要被设置为延迟接受
         if (ls[i].add_deferred) {
             ngx_memzero(&af, sizeof(struct accept_filter_arg));
             (void) ngx_cpystrn((u_char *) af.af_name,
@@ -919,6 +921,7 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
         // deferred，只有socket上有数据可读才接受连接
         // 由内核检查客户端连接的数据发送情况
         // 减少了epoll的调用次数，可以提高性能
+        //当前socket是否需要被设置为延迟接受  当前socket是否需要被取消延迟接受
         if (ls[i].add_deferred || ls[i].delete_deferred) {
 
             if (ls[i].add_deferred) {
@@ -970,13 +973,13 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
 #endif /* NGX_HAVE_DEFERRED_ACCEPT */
 
 #if (NGX_HAVE_IP_RECVDSTADDR)
-
+        //表示当前监听句柄是否支持通配：主要是通配UDP等接受数据
         if (ls[i].wildcard
             && ls[i].type == SOCK_DGRAM
             && ls[i].sockaddr->sa_family == AF_INET)
         {
             value = 1;
-
+            //随UDP数据报接收目的的地址
             if (setsockopt(ls[i].fd, IPPROTO_IP, IP_RECVDSTADDR,
                            (const void *) &value, sizeof(int))
                 == -1)
@@ -995,7 +998,7 @@ ngx_configure_listening_sockets(ngx_cycle_t *cycle)
             && ls[i].sockaddr->sa_family == AF_INET)
         {
             value = 1;
-
+            //传递一条包含pktinfo结构(该结构提供一些来访包的相关信息)的IP_PKTINFO辅助信息
             if (setsockopt(ls[i].fd, IPPROTO_IP, IP_PKTINFO,
                            (const void *) &value, sizeof(int))
                 == -1)
@@ -1043,10 +1046,12 @@ ngx_close_listening_sockets(ngx_cycle_t *cycle)
     ngx_listening_t *ls;
     ngx_connection_t *c;
 
+    //对于IOCP事件模型的socket，这里不做任何处理
     if (ngx_event_flags & NGX_USE_IOCP_EVENT) {
         return ;
     }
 
+    //因为这里关闭了所有监听sockets，因此这里不再持有互斥锁的任何相关变量
     ngx_accept_mutex_held = 0;
     ngx_use_accept_mutex = 0;
 
@@ -1056,6 +1061,7 @@ ngx_close_listening_sockets(ngx_cycle_t *cycle)
         c = ls[i].connection;
 
         if(c) {
+            //c->read->active为真，说明该事件已经被注册用于接收IO通知，因此这里需要将该事件删除
             if(c->read->active) {
                 if(ngx_event_flags & NGX_USE_EPOLL_EVENT) {
                     ngx_del_event(c->read, NGX_READ_EVENT, 0);
@@ -1073,14 +1079,14 @@ ngx_close_listening_sockets(ngx_cycle_t *cycle)
 
         ngx_log_debug2(NGX_LOG_DEBUG_CORE, cycle->log, 0,
                        "close listening %V #%d ", &ls[i].addr_text, ls[i].fd);
-
+        //关闭socket
         if (ngx_close_socket(ls[i].fd) == -1) {
             ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_socket_errno,
                           ngx_close_socket_n " %V failed", &ls[i].addr_text);
         }
 
 #if (NGX_HAVE_UNIX_DOMAIN)
-
+        //对于unix域socket,如果是属于最后一个进程退出，则需要删除本地产生的unix域文件
         if (ls[i].sockaddr->sa_family == AF_UNIX
             && ngx_process <= NGX_PROCESS_MASTER
             && ngx_new_binary == 0)
@@ -1103,6 +1109,13 @@ ngx_close_listening_sockets(ngx_cycle_t *cycle)
 
 // 从全局变量ngx_cycle里获取空闲链接，即free_connections链表
 // 如果没有空闲连接，调用ngx_drain_connections释放一些可复用的连接
+/**
+ngx_cycle->files: 本字段是nginx事件模块初始化时预先分配的一个足够大的空间，用于将来存放所有正在使用的连接（指针）,
+    并且可以通过socket fd来索引该ngx_connection_t连接对象
+ngx_cycle->connections: 预先分配了一个足够大的空间来在这空间分配ngx_connection_t对象
+ngx_cycle->free_connections: 本字段存放了所有空闲状态的ngx_connection_t对象，通过ngx_connection_t.data字段连接起来
+cycle->read_events: 预先分配的足够大的ngx_event_t对象空间
+ */
 ngx_connection_t *
 ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
 {
@@ -1110,7 +1123,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     ngx_event_t *rev, *wev;
     ngx_connection_t *c;
 
-    //socket不能超过最大值
+    //socket句柄s不能大于ngx_cycle->files_n，否则是没有地方存放的，也不可能会出现这种情况。若出现，则肯定发生了错误
     if (ngx_cycle->files && (ngx_uint_t) s >= ngx_cycle->files_n) {
         ngx_log_error(NGX_LOG_ALERT, log, 0,
                       "the new socket has number %d, "
@@ -1119,6 +1132,8 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
         return NULL;
     }
 
+    //从free_connections中取出一个ngx_connection_t对象，如果当前已经没有空闲，则通过ngx_drain_connections()释放长连接的
+    //   方式来获得空闲连接。如果还是不能或者，直接返回NULL
     c = ngx_cycle->free_connections;
 
     if (c == NULL) {
@@ -1138,6 +1153,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     ngx_cycle->free_connections = c->data;
     ngx_cycle->free_connection_n--;
 
+    //将获取到的长连接存放进ngx_cycle->files[s]中
     if (ngx_cycle->files && ngx_cycle->files[s] == NULL) {
         ngx_cycle->files[s] = c;
     }
@@ -1165,7 +1181,9 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     ngx_memzero(rev, sizeof(ngx_event_t));
     ngx_memzero(wev, sizeof(ngx_event_t));
 
-    // 置instance标志，用于检查连接是否失效
+    // 置instance标志，用于检查连接是否失效 一般情况下是用rev->instance与另外保存的一个instance进行对比，如果不相等，则说明是一个
+    // stale事件。因此这里对instance进行取反，表明当前指定的这个events是属于过期事件，不应该被处理
+    // TODO ??
     rev->instance = !instance;
     wev->instance = !instance;
 
@@ -1177,13 +1195,15 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
     wev->data = c;
 
     // 设置写事件的标志
-    // 用于区分读写事件
+    // 获取到空闲连接，设置为可写状态 用于区分读写事件
     wev->write = 1;
 
     return c;
 }
 
 // 释放一个连接，加入空闲链表
+//此函数用于释放ngx_connection_t连接，将其插入到ngx_cycle->free_connections链表头，
+//    并且如果该connection存放在ngx_cycle->files[c->fd]中,则从该位置移除
 void
 ngx_free_connection(ngx_connection_t *c)
 {
@@ -1206,10 +1226,13 @@ ngx_close_connection(ngx_connection_t *c)
     ngx_uint_t log_error, level;
     ngx_socket_t  fd;
 
+    //如果c->fd == -1，说明连接已经关闭
     if (c->fd == (ngx_socket_t) -1) {
         ngx_log_error(NGX_LOG_ALERT, c->log, 0, "connection already closed");
         return;
     }
+
+    //移除connection上关联的读写定时器事件
 
     // 读事件在定时器里，需要删除
     if (c->read->timer_set) {
@@ -1221,6 +1244,7 @@ ngx_close_connection(ngx_connection_t *c)
         ngx_del_timer(c->write);
     }
 
+    //如果不是共享connection的话，移除该connection上关联的读写事件
     if (!c->shared) {
         if (ngx_del_conn) {
             ngx_del_conn(c, NGX_CLOSE_EVENT);
@@ -1235,6 +1259,7 @@ ngx_close_connection(ngx_connection_t *c)
         }
     }
 
+    //移除该连接已经投递到队列中的事件
     if (c->read->posted) {
         ngx_delete_posted_event(c->read);
     }
@@ -1246,7 +1271,7 @@ ngx_close_connection(ngx_connection_t *c)
     c->read->closed = 1;
     c->write->closed = 1;
 
-    // 参数reusable表示是否可以复用，即加入队列
+    // 回收连接 参数reusable表示是否可以复用，即加入队列
     // 连接加入cycle的复用队列ngx_cycle->reusable_connections_queue
     ngx_reusable_connection(c, 0);
 
@@ -1257,6 +1282,7 @@ ngx_close_connection(ngx_connection_t *c)
     fd = c->fd;
     c->fd = (ngx_socket_t) -1;
 
+    //非共享connection的话，需要关闭对应的fd
     if (c->shared) {
         return ;
     }
@@ -1294,6 +1320,7 @@ ngx_close_connection(ngx_connection_t *c)
 
 // 连接加入cycle的复用队列ngx_cycle->reusable_connections_queue
 // 参数reusable表示是否可以复用，即加入队列
+//函数主要用于在reusable为true，即表示该连接需要马上被复用，因此这里会先从队列中移除，然后再重新加入到可复用连接队列中
 void
 ngx_reusable_connection(ngx_connection_t *c, ngx_uint_t reusable)
 {
@@ -1330,6 +1357,8 @@ ngx_reusable_connection(ngx_connection_t *c, ngx_uint_t reusable)
 // 调用事件的处理函数，里面会检查c->close
 // 这样就会调用ngx_http_close_connection
 // 释放连接，加入空闲链表，可以再次使用
+
+//从ngx_cycle->reusable_connections_queue中释放长连接，释放完成后加入到空闲连接池，以供后续新连接使用
 static void
 ngx_drain_connections(ngx_cycle_t *cycle)
 {
@@ -1423,6 +1452,8 @@ ngx_connection_local_sockaddr(ngx_connection_t *c, ngx_str_t *s, ngx_uint_t port
         }
     }
 
+    //收件检查c->local_sockaddr保存的是否是一个有效的IP地址(addr不为0）
+    //如果是无效的IP地址，则通过getsockname()来获取，保存到c->local_sockaddr
     //listen *:80 或者listen 80都会满足，这是服务器listen端的IP地址只能通过getsockname获取
     if(addr == 0) {
 
@@ -1448,13 +1479,14 @@ ngx_connection_local_sockaddr(ngx_connection_t *c, ngx_str_t *s, ngx_uint_t port
         return NGX_OK;
     }
 
-    // 格式化地址字符串
+    // 格式化地址字符串   将c->local_sockaddr地址通过ngx_sock_ntop()函数转换成字符串表示形式，返回
     s->len = ngx_sock_ntop(c->local_sockaddr, c->local_socklen,
                            s->data, s->len, port);
 
     return NGX_OK;
 }
 
+//设置tcp_nodelay
 ngx_int_t
 ngx_tcp_nodelay(ngx_connection_t *c)
 {
@@ -1498,6 +1530,7 @@ ngx_tcp_nodelay(ngx_connection_t *c)
     return NGX_OK;
 }
 
+//此函数主要用于打印ngx_connection_t中的日志信息
 ngx_int_t
 ngx_connection_error(ngx_connection_t *c, ngx_err_t err, char *text)
 {
