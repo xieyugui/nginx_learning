@@ -8,6 +8,7 @@
 * @desc:
  * https://github.com/chronolaw/annotated_nginx/blob/master/nginx/src/core/ngx_cycle.c
  * https://github.com/xieyugui/reading-code-of-nginx-1.9.2/blob/master/nginx-1.9.2/src/core/ngx_cycle.c
+ * https://ivanzz1001.github.io/records/post/nginx/2018/03/16/nginx-source_part38_1  +
 */
 
 //
@@ -20,11 +21,14 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 
+//里定义nginx cycle所关联的pool大小，默认值NGX_DEFAULT_POOL_SIZE，即16KB
 #ifndef NGX_CYCLE_POOL_SIZE
 #define NGX_CYCLE_POOL_SIZE  NGX_DEFAULT_POOL_SIZE
 #endif
 
+//定义程序在执行到一些关键错误点时，产生SIGSTOP信号
 #define NGX_DEBUG_POINTS_STOP 1
+//定义程序在执行到一些关键错误点时，执行abort()函数
 #define NGX_DEBUG_POINTS_ABORT 2
 
 typedef struct ngx_shm_zone_s ngx_shm_zone_t;
@@ -40,14 +44,17 @@ struct ngx_shm_zone_s {
     //真正的共享内存
     ngx_shm_t shm; //ngx_init_cycle->ngx_shm_alloc->ngx_shm_alloc中创建相应的共享内存空间
     //ngx_init_cycle中执行 初始化函数
-    ngx_shm_zone_init_pt init;
+    ngx_shm_zone_init_ptngx_shm_zone_init_pt init;
     void *tag; //创建的这个共享内存属于哪个模块
-    ngx_uint_t noreuse;
+    ngx_uint_t noreuse;//取值为0时，则表示可以对此共享内存进行复用；否则不能对此共享内存进行复用。一般用在系统升级时，表示是否可以复用前面创建的共享内存
 };
 
 // nginx核心数据结构，表示nginx的生命周期，含有许多重要参数
 // conf_ctx, 存储所有模块的配置结构体，是个二维数组
 // 启动nginx时的环境参数，配置文件，工作路径等 每个进程都有这个结构
+//ngx_cycle_s是一个总控型数据结构。一个cycle对象存放着从某个配置创建而来的nginx运行时上下文。我们可以通过全局变量ngx_cycle来引用到当
+// 前进程的cycle上下文（对于worker进程，在创建时也会继承得到该上下文）。每一次重新加载nginx配置文件时，都会从该配置文件重新创建出一个新的
+// cycle对象；而原来老的cycle对象则会在新的cycle成功创建之后被删除掉
 struct ngx_cycle_s {
     // 存储所有模块的配置结构体，是个二维数组
     // 0 = ngx_core_module
@@ -58,7 +65,7 @@ struct ngx_cycle_s {
     // 7 = ngx_http_module
     // 8 = ngx_http_core_module
     void ****conf_ctx;
-    ngx_pool_t *pool;
+    ngx_pool_t *pool;//本cycle所关联的内存池对象。针对每一个新的cycle对象，都会创建一个相应的内存池对象
 
     /*    日志模块中提供了生成基本ngx_log_t日志对象的功能，这里的log实际上是在还没有执行ngx_init_cycle方法前，
     也就是还没有解析配置前，如果有信息需要输出到日志，就会暂时使用log对象，它会输出到屏幕。 */
@@ -105,12 +112,13 @@ struct ngx_cycle_s {
 
     //如nginx.conf配置文件中的access_log参数的文件就保存在该链表中
     ngx_list_t open_files;// 打开的文件
+    //共享内存列表，元素类型为ngx_shm_zone_s
     ngx_list_t shared_memory; // 单链表容器，元素类型是ngx_shm_zone_t结构体，每个元素表示一块共享内存
 
     // 连接数组的数量
     // 由worker_connections指定，在event模块里设置
     ngx_uint_t connection_n;
-    ngx_uint_t files_n;
+    ngx_uint_t files_n; //当前上面files数组中实际的连接个数
 
     // 连接池,大小是connection_n
     // 每个连接都有一个读事件和写事件，使用数组序号对应
@@ -162,9 +170,9 @@ typedef struct {
     ngx_int_t rlimit_nofile;
     off_t rlimit_core; // coredump文件大小
 
-    int priority;
+    int priority; //用于定义worker进程的调度优先级，类似于nice命令
 
-    ngx_uint_t                cpu_affinity_auto;
+    ngx_uint_t                cpu_affinity_auto; //表明当前是否自动设置进程的CPU亲和性
     ngx_uint_t                cpu_affinity_n; //worker_cpu_affinity参数个数
     ngx_cpuset_t             *cpu_affinity;
 
@@ -175,6 +183,8 @@ typedef struct {
     ngx_gid_t group;
 
     ngx_str_t working_directory;
+    //nginx使用锁机制来实现accept mutex，并且顺序的来访问共享内存。在大多数的系统上，锁都是通过原子操作来实现的，
+    // 因此会忽略配置文件中的lock_file file指令；而对于其他的一些系统，lock file机制会被使用
     ngx_str_t lock_file;
 
     ngx_str_t pid; // master进程的pid文件名
@@ -186,45 +196,54 @@ typedef struct {
     ngx_uint_t transparent;
 } ngx_core_conf_t;
 
+//判断cycle是否已经初始化
 #define ngx_is_init_cycle(cycle) (cycle->conf_ctx == NULL)
 
 // 在main里调用
 // 从old_cycle(init_cycle)里复制必要的信息，创建新cycle
 // 当reconfigure的时候old_cycle就是当前的cycle
-// 初始化core模块
+// 初始化core模块 初始化cycle
 ngx_cycle_t *ngx_init_cycle(ngx_cycle_t *old_cycle);
 
-// 写pid到文件
+// 创建进程pid文件
 ngx_int_t ngx_create_pidfile(ngx_str_t *name, ngx_log_t *log);
 
+//删除进程pid文件
 void ngx_delete_pidfile(ngx_cycle_t *cycle);
 
 // main()里调用，如果用了-s参数，那么就要发送reload/stop等信号
+// 向master进程发送信号
 ngx_int_t ngx_signal_process(ngx_cycle_t *cycle, char *sig);
 
 //ngx_reopen标志位，如果为1，则表示需要重新打开所有文件
+//以user用户身份打开或创建文件
 void ngx_reopen_files(ngx_cycle_t *cycle, ngx_uid_t user);
 
 //配置一些环境变量
 char **ngx_set_environment(ngx_cycle_t *cycle, ngx_uint_t *last);
 
-//进行热代码替换，这里是调用execve来执行新的代码
+//进行热代码替换，这里是调用execve来执行新的代码  进行nginx热升级
 ngx_pid_t ngx_exec_new_binary(ngx_cycle_t *cycle, char *const *argv);
 
+//获得进程CPU亲和性
 ngx_cpuset_t *ngx_get_cpu_affinity(ngx_uint_t n);
 
+//添加一个共享内存
 ngx_shm_zone_t *ngx_shared_memory_add(ngx_conf_t *cf, ngx_str_t *name, size_t size, void *tag);
 
 // 设置关闭worker进程的超时时间
 void ngx_set_shutdown_timer(ngx_cycle_t *cycle);
 
-// nginx生命周期使用的超重要对象
+// nginx生命周期使用的超重要对象 指向当前nginx运行上下文
 extern volatile ngx_cycle_t *ngx_cycle;
+// 所有旧的nginx运行上下文
 extern ngx_array_t ngx_old_cycles;
+// nginx核心模块
 extern ngx_module_t ngx_core_module;
 
-// -t参数，检查配置文件, in ngx_cycle.c
+// -t参数，检查配置文件, in ngx_cycle.c 测试nginx配置文件
 extern ngx_uint_t ngx_test_config;
+//dump nginx配置文件
 extern ngx_uint_t ngx_dump_config;
 
 // 安静模式，不输出测试信息, in ngx_cycle.c

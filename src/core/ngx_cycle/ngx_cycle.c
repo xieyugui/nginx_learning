@@ -18,16 +18,28 @@
 
 // 出错时销毁cycle里的内存池
 static void ngx_destroy_cycle_pools(ngx_conf_t *conf);
+
+//初始化共享内存
 static ngx_int_t ngx_init_zone_pool(ngx_cycle_t *cycle, ngx_shm_zone_t *shm_zone);
+
+//nginx使用锁机制来实现accept mutex，并且顺序的来访问共享内存。在大多数的系统上，锁都是通过原子操作来实现的，
+//因此会忽略配置文件中的lock_file file指令；而对于其他的一些系统，lock file机制会被使用
+//默认的lock文件存放位置为logs/nginx.lock
 static ngx_int_t ngx_test_lockfile(u_char *file, ngx_log_t *log);
+
+//清除老的nginx cycle上下文
 static void ngx_clean_old_cycles(ngx_event_t *ev);
 static void ngx_shutdown_timer_handler(ngx_event_t *ev);
 
-// nginx生命周期使用的超重要对象
+// ngx_cycle作为一个全局变量指向nginx当前运行的上下文环境。因为在运行过程中，上下文可能会经常发生变动，因此这里用volatile修饰
 volatile ngx_cycle_t *ngx_cycle;
+//保存所有原来到的nginx上下文对象
 ngx_array_t ngx_old_cycles;
 
+//nginx的一个临时内存池。这是因为在nginx升级过程中，有一些老的ngx_cycle_t *信息需要保存，这需要空间，因此这里开辟一个临时的内存池来存储这些信息。
 static ngx_pool_t *ngx_temp_pool;
+
+//对于ngx_old_cycles的清理会采用事件机制来完成，因此这里定义一个cleaner event
 static ngx_event_t ngx_cleaner_event;
 
 // 关闭worker进程的超时时间使用
@@ -35,13 +47,16 @@ static ngx_event_t ngx_cleaner_event;
 // 在ngx_set_shutdown_timer()里
 static ngx_event_t ngx_shutdown_event;
 
-// 用于main，检测配置文件的标识量
+// 是否是对nginx配置文件进行测试
 ngx_uint_t ngx_test_config;
-// 1.10, dump整个配置文件
+// 是否要dump出nginx配置文件
 ngx_uint_t ngx_dump_config;
-// 安静模式，不输出测试信息, in ngx_cycle.c
+
+// 在测试nginx配置文件时，抑制非错误信息的输出
 ngx_uint_t ngx_quiet_mode;
 
+//之所以用一个桩dumb，是因为这里的ngx_event_t设计主要是针对nginx网络事件的，每个网络事件都关联着一个ngx_connection_t。
+// 这里虽然dumb是用于定时器事件，但是还是会把该定时器事件看成是一个网络事件来处理，因此要设立一个STUB来表明这只是一个桩，并不是一个网络事件
 static ngx_connection_t dump;
 
 // 在main里调用
@@ -80,12 +95,13 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     tp->sec = 0;
 
     // 获取当前时间
+    //在sec相同的情况下，ngx_time_update()并不会对所有缓存的内容进行更新，这是为了效率方面的考虑。而tp->sec=0，能够确保实现对所有缓存时间的更新
     ngx_time_update();
 
     //在解析配置文件的error_log前，使用这个旧的默认log,后面解析完配置文件后，会重新按照error_log配置文件来写日志
     log = old_cycle->log;
 
-    // 创建一个新内存池
+    // 为新创建的nginx cycle创建一个NGX_CYCLE_POOL_SIZE(默认16KB)大小的内存池，然后完成配置路径等数据的相关初始化
     pool = ngx_create_pool(NGX_CYCLE_POOL_SIZE, log);
     if (pool == NULL) {
         return NULL;
