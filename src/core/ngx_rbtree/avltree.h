@@ -6,6 +6,8 @@
 * @file:      avltree.h
 * @date:      2017/12/21 上午11:20
 * @desc:
+ *
+ * https://blog.csdn.net/hm108106/article/details/72736075 比较详细
 */
 
 //
@@ -49,28 +51,28 @@ Node* avltree_minimum(AVLTree tree);
 Node* avltree_maximum(AVLTree tree);
 
 /*
- * LL：左左对应的情况(左单旋转)。
+ * LL：左左对应的情况(右单旋转)。
  *
  * 返回值：旋转后的根节点
  */
 Node* left_left_rotation(AVLTree k2);
 
 /*
- * RR：右右对应的情况(右单旋转)。
+ * RR：右右对应的情况(左单旋转)。
  *
  * 返回值：旋转后的根节点
  */
 Node* right_right_rotation(AVLTree k1);
 
 /*
- * LR：左右对应的情况(左双旋转)。
+ * LR：左右对应的情况(左旋+右旋转)。
  *
  * 返回值：旋转后的根节点
  */
 Node* left_right_rotation(AVLTree k3);
 
 /*
- * RL：右左对应的情况(右双旋转)。
+ * RL：右左对应的情况(右旋+左旋转)。
  *
  * 返回值：旋转后的根节点
  */

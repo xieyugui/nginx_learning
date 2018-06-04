@@ -49,7 +49,7 @@ ngx_create_pool(size_t size, ngx_log_t *log)
     p->d.failed = 0;
 
     size = size - sizeof(ngx_pool_t);
-    // NGX_MAX_ALLOC_FROM_POOL 每次能从pool分配的最大内存块大小
+    // NGX_MAX_ALLOC_FROM_POOL 每次能从pool分配的最大内存块大小 最大不能超过单页
     p->max = (size < NGX_MAX_ALLOC_FROM_POOL) ? size : NGX_MAX_ALLOC_FROM_POOL;
 
     /* 只有缓存池的父节点，才会用到下面的这些  ，子节点只挂载在p->d.next,并且只负责p->d的数据内容*/
@@ -214,6 +214,7 @@ ngx_palloc_block(ngx_pool_t *pool, size_t size)
     new->d.next = NULL;
     new->d.failed = 0;
     /* 分配size大小的内存块，返回m指针地址 */
+    //第一个分配的是ngx_pool_t 后面其他的分配的都是ngx_pool_data_t 所以只要移动sizeof(ngx_pool_data_t)就到达了数据区了
     m += sizeof(ngx_pool_data_t);
     m = ngx_align_ptr(m, NGX_ALIGNMENT);
     new->d.last = m + size;

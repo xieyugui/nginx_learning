@@ -15,6 +15,11 @@
 #include <ngx_core.h>
 #include <ngx_config.h>
 
+/**
+ * 在队列中找中间元素
+ * 1 2 3 4 5   中间元素为3
+ * 1 2         中间元素为2
+ */
 ngx_queue_t  *
 ngx_queue_middle(ngx_queue_t *queue)
 {
@@ -22,10 +27,12 @@ ngx_queue_middle(ngx_queue_t *queue)
 
     middle = ngx_queue_head(queue);
 
+    //如果队列里只有一个元素就直接返回该元素
     if(middle == ngx_queue_last(queue)) {
         return middle;
     }
 
+    //返回链表第一个元素
     next = ngx_queue_head(queue);
 
     for (;;) {
@@ -33,6 +40,7 @@ ngx_queue_middle(ngx_queue_t *queue)
 
         next = ngx_queue_next(next);
 
+        //返回链表最后一个元素
         if(next == ngx_queue_last(queue)) {//偶数个节点，在此返回后半个队列的第一个节点
             return middle;
         }
@@ -46,6 +54,7 @@ ngx_queue_middle(ngx_queue_t *queue)
     }
 }
 
+//采用稳定的的插入排序算法来进行排序
 void
 ngx_queue_sort(ngx_queue_t *queue,
     ngx_int_t (*cmp)(const ngx_queue_t *, const ngx_queue_t *))

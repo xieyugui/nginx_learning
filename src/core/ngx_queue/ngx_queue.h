@@ -41,7 +41,7 @@ struct ngx_queue_s {
     (x)->next->prev = x;    \
     (h)->next = x
 
-#define ngx_queue_inster_after ngx_queue_insert_head
+#define ngx_queue_insert_after ngx_queue_insert_head
 
 //在尾节点之后插入新节点
 #define ngx_queue_insert_tail(h, x)     \
@@ -91,7 +91,7 @@ struct ngx_queue_s {
     (h)->prev->next = h;
 
 //使用offsetof宏，根据已知的一个已经分配空间的结构体对象指针a中的某个成员b的地址，来获取该结构体指针对象a地址
-//获取队列节点数据
+//用于求数据部分的首地址，用于求type 的首地址
 #define ngx_queue_data(q, type, link)   \
     (type *) ((u_char *) q - offsetof(type, link))
 

@@ -40,6 +40,7 @@ ngx_list_push(ngx_list_t *l)
 
     last = l->last;
 
+    //如果part 的已经使用的nelts 等于每一个part的容量 就说明已经满了
     if (last->nelts == l->nalloc) {
         last = ngx_palloc(l->pool, sizeof(ngx_list_part_t));
         if(last == NULL) {

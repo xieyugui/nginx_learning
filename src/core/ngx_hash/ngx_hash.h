@@ -44,15 +44,15 @@ ngx_hash_wildcard_t专用于表示前置或后置通配符的哈希表，如：�
 是由一个基本哈希表hash和一个额外的value指针，当使用ngx_hash_wildcard_t通配符哈希表作为容器元素时，可以使用value指向用户数据。
  */
 typedef struct {
-    ngx_hash_t hash;
+    ngx_hash_t hash; //基本散列表结构
     void *value;//value这个字段是用来存放某个已经达到末尾的通配符url对应的value值，如果通配符url没有达到末尾，这个字段为NULL
 } ngx_hash_wildcard_t;
 
 //hash表中元素ngx_hash_elt_t 预添加哈希散列元素结构 ngx_hash_key_t
 typedef struct {
-    ngx_str_t key;  // 索引值
+    ngx_str_t key;  // nginx的字符串结构，对应<key,value>结构中的key
     ngx_uint_t key_hash; //对应hash值,由哈希函数根据key计算出的值. 将来此元素代表的结构体会被插入bucket[key_hash % size]
-    void *value; // 内容
+    void *value; // 该key对应的value值
 } ngx_hash_key_t;
 
 /*
@@ -107,28 +107,31 @@ typedef struct {
 #define NGX_HASH_SMALL 1 //NGX_HASH_SMALL表示初始化元素较少
 #define NGX_HASH_LARGE 2 //NGX_HASH_LARGE表示初始化元素较多
 
-#define NGX_HASH_LARGE_ASIZE 16384
-#define NGX_HASH_LARGE_HSIZE 10007
+#define NGX_HASH_LARGE_ASIZE 16384 //基于数组的Hash，用于指定ngx_hash_keys_arrays_t结构中keys、dns_wc_head、dns_wc_tail数组的容量1
+#define NGX_HASH_LARGE_HSIZE 10007 //基于数组的Hash，用于指定桶的数量
 
 #define NGX_HASH_WILDCARD_KEY 1 //通配符类型
-#define NGX_HASH_READONLY_KEY 2
+#define NGX_HASH_READONLY_KEY 2 //hash key类型
 
 //初始化hash需要的所有键值对
 typedef struct {
     //散列中槽总数  如果是大hash桶方式，则hsize=NGX_HASH_LARGE_HSIZE,小hash桶方式，hsize=107
-    ngx_uint_t hsize;
+    ngx_uint_t hsize; //用于指定桶大小
 
     ngx_pool_t *pool;
     ngx_pool_t *temp_pool;
 
-    ngx_array_t keys; //存放不包含通配符的<key,value>键值对
-    ngx_array_t *keys_hash; //用来检测冲突的
+    ngx_array_t keys; //存放所有非通配符key的数组
+    //这是个二维数组，第一个维度代表的是bucket编号，那么keys_hash[i]中存放的是所有key求Hash后对hsize取模值为i的key列表。
+    // 假设有3个key, 分别是key1、key2和key3，假设hash算出来以后对hsize去模的值都是i，那么这三个key就顺序存放在keys_hash[i][0]、
+    // keys_hash[i][1]、keys_hash[i][2]。该值在调用的过程中用来保存和检测是否有冲突的key值，也就是是否有重复
+    ngx_array_t *keys_hash;//这是一个二维数组。该值在调用的过程中用来保存和检测是否有冲突的key值，也就是是否有重复1
 
     ngx_array_t dns_wc_head; //存放包含前缀通配符的<key,value>键值对
-    ngx_array_t *dns_wc_head_hash; //用来检测冲突的
+    ngx_array_t *dns_wc_head_hash;
 
     ngx_array_t dns_wc_tail; //存放包含后缀通配符的<key,value>键值对
-    ngx_array_t *dns_wc_tail_hash; //用来检测冲突的
+    ngx_array_t *dns_wc_tail_hash;
 } ngx_hash_keys_arrays_t;
 
 /*

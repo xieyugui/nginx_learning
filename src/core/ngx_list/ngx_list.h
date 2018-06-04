@@ -23,17 +23,18 @@ typedef struct ngx_list_part_s ngx_list_part_t;
 struct ngx_list_part_s {
     void *elts;//指向该节点的数据区(该数据区中可存放nalloc个大小为size的元素)
     ngx_uint_t nelts;//已经存放的元素个数
-    ngx_list_part_t *next;//指向下一个链表节点
+    ngx_list_part_t *next;//指向链表的下一个part
 };
 
 typedef struct {
     ngx_list_part_t *last;//指向链表最后一个节点(part)
-    ngx_list_part_t part;//该链表的首个存放具体元素的节点
-    size_t size;//每个元素大小
-    ngx_uint_t nalloc;//每个节点所含的固定大小的数组的容量
+    ngx_list_part_t part;//链表的第一个part
+    size_t size;//链表中每个元素的大小
+    ngx_uint_t nalloc;//每一个part的容量
     ngx_pool_t *pool;//内存池
 } ngx_list_t;
 
+//用于创建一个链表
 ngx_list_t *ngx_list_create(ngx_pool_t *pool, ngx_uint_t n, size_t size);
 
 static ngx_inline ngx_int_t
@@ -54,6 +55,7 @@ ngx_list_init(ngx_list_t *list, ngx_pool_t *pool, ngx_uint_t n, size_t size)
     return NGX_OK;
 }
 
+//向链表中push一个元素
 void *ngx_list_push(ngx_list_t *list);
 
 #endif //NGX_LIST_NGX_LIST_H

@@ -216,7 +216,7 @@ Node* insert_bstree(BSTree tree, int key)
         删除结点s可以归结到情况(2)。严蔚敏数据结构P230-231就是该处理方式。
     b.找到结点p的中序直接后继结点s，把结点s的数据转移到结点p，然后删除结点s，由于结点s为p的右子树总最左的结点，因而s无左子树，
         删除结点s可以归结到情况(2)。算法导论第2版P156-157该是该处理方式。
-    c.找到p的中序直接前驱s，将p的左子树接到父节点上，将p的右子树接到s的右子树上，然后删除结点p。
+    c.找到p的中序直接前驱s，将p的左子树接到父节点上，将p的右子树接到s的右子树上，然后删除结点p。？？
  */
 Node* delete_bstree(BSTree tree, int key)
 {
@@ -230,7 +230,7 @@ Node* delete_bstree(BSTree tree, int key)
 
     if ((z->left == NULL) || (z->right == NULL) )
         y = z;
-    else//查找后继
+    else//查找后继(或者因为左右子树都存在，所以直接选左子树最大，或者右子树最小) 都行
         y = bstree_successor(z);
 
     if (y->left != NULL)

@@ -20,18 +20,15 @@ static ngx_inline void ngx_rbtree_right_rotate(ngx_rbtree_node_t **root,
     ngx_rbtree_node_t *sentinel, ngx_rbtree_node_t *node);
 
 /*
-向红黑树中插入节点。上面说过，向红黑树中插入节点，有可能破坏红黑树的性质，这时就需要调整红黑树，哪些情况会破坏红黑树的性质呢？
- 下面三种情况会破坏红黑树的性质：
-1）如果当前结点的父结点是红色且祖父结点的另一个子结点（叔叔结点）是红色
-2）当前节点的父节点是红色,叔叔节点是黑色，当前节点是其父节点的右子
-3）当前节点的父节点是红色,叔叔节点是黑色，当前节点是其父节点的左子
-下面是这三种情况的对应调整方法（这里只是父节点为祖父节点的左孩子（右孩子情况类同））：
-如果当前结点的父结点是红色且祖父结点的另一个子结点（叔叔结点）是红色，调整方法如下：
-1）将当前节点的父节点和叔叔节点涂黑，祖父结点涂红，把当前结点指向祖父节点，从新的当前节点重新开始算法
-如果当前节点的父节点是红色,叔叔节点是黑色，当前节点是其父节点的右子，调整方法如下：
-2）当前节点的父节点做为新的当前节点，以新当前节点为支点左旋
-如果当前节点的父节点是红色,叔叔节点是黑色，当前节点是其父节点的左子，调整方法如下：
-3）父节点变为黑色，祖父节点变为红色，在祖父节点为支点右旋
+ case 1：红黑树为空，新节点插入作为根结点
+ case 2：新节点的父节点为黑色，此时直接插入后不会破坏红黑树的性质，可以直接插入
+ case 3：父节点为红色，叔父结点也为红色；则需要将父节点及叔父节点均调整为黑色，然后将祖父结点调整为红色，再以祖父结点为起点，进行红黑性恢复的起点，进行继续调整
+ case 4:父节点为红色，叔父节点为黑色，父节点为祖父节点的左节点，插入结点在父节点的左节点；需要以插入节点的左节点进行一次右旋转，此处理类型为LL型
+ case 5:父节点为红色，叔父节点为黑色，父节点为祖父节点的左节点，插入结点在父节点的右节点；
+            需要先以插入节点的父亲节点为旋转点先进行一次左旋转，再以插入节点的的祖父节点进行一次右旋转，此处理类型即为LR型
+ case 6:父节点为红色，叔父节点为黑色，父节点为祖父节点的右节点，插入结点在父节点的右节点；需要以插入节点的左节点进行一次左旋转，此处理类型为RR型
+ case 7:父节点为红色，叔父节点为黑色，父节点为祖父节点的右节点，插入结点在父节点的左节点；需要先以插入节点的父亲节点为旋转点先进行一次右旋转，
+            再以插入节点的的祖父节点进行一次左旋转，此处理类型即为RL型
  */
 
 /* 插入节点 */
@@ -62,6 +59,7 @@ ngx_rbtree_insert(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
     }
     /* 若红黑树不为空，则按照二叉查找树的插入操作进行
      * 该操作由函数指针提供
+     * ngx_rbtree_insert_value
      */
     tree->insert(*root, node, sentinel);
 
@@ -191,6 +189,16 @@ ngx_rbtree_insert_timer_value(ngx_rbtree_node_t *temp, ngx_rbtree_node_t *node,
     ngx_rbt_red(node);
 }
 
+/*
+第一步：将红黑树当作一颗二叉查找树，将节点删除。
+       这和"删除常规二叉查找树中删除节点的方法是一样的"。分3种情况：
+       ① 被删除节点没有儿子，即为叶节点。那么，直接将该节点删除就OK了。
+       ② 被删除节点只有一个儿子。那么，直接删除该节点，并用该节点的唯一子节点顶替它的位置。
+       ③ 被删除节点有两个儿子。那么，先找出它的后继节点；然后把“它的后继节点的内容”复制给“该节点的内容”；之后，删除“它的后继节点”。在这里，后继节点相当于替身，在将后继节点的内容复制给"被删除节点"之后，再将后继节点删除。这样就巧妙的将问题转换为"删除后继节点"的情况了，下面就考虑后继节点。 在"被删除节点"有两个非空子节点的情况下，它的后继节点不可能是双子非空。既然"的后继节点"不可能双子都非空，就意味着"该节点的后继节点"要么没有儿子，要么只有一个儿子。若没有儿子，则按"情况① "进行处理；若只有一个儿子，则按"情况② "进行处理。
+
+第二步：通过"旋转和重新着色"等一系列来修正该树，使之重新成为一棵红黑树。
+       因为"第一步"中删除节点之后，可能会违背红黑树的特性。所以需要通过"旋转和重新着色"来修正该树，使之重新成为一棵红黑树。
+ */
 void
 ngx_rbtree_delete(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
 {
@@ -306,8 +314,9 @@ ngx_rbtree_delete(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
     //注意此后都是针对temp操作，因为是temp所在路径删除了一个黑色节点(这里是将subst黑色提到了原来node的位置故少
     // 了一个黑色节点)，需要对temp重新平衡
 
-    while(temp != *root && ngx_rbt_black(temp)) {
-
+    //但因为删除了一个黑色结点导致黑高度减一，红黑树性质破坏，调整红黑树
+    while(temp != *root && ngx_rbt_is_black(temp)) {//若temp为红色或者temp是新根，则直接将temp重绘为黑色就行了不用进入循环体
+        //temp为左儿子(右儿子是对称情形)
         if(temp == temp->parent->left) {
             w = temp->parent->right;
             /* case A：temp兄弟节点为红色 */
@@ -396,7 +405,7 @@ ngx_rbtree_delete(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
     ngx_rbt_black(temp);
 }
 
-
+//左旋
 static ngx_inline void
 ngx_rbtree_left_rotate(ngx_rbtree_node_t **root, ngx_rbtree_node_t *sentinel,
                        ngx_rbtree_node_t *node)
@@ -426,6 +435,7 @@ ngx_rbtree_left_rotate(ngx_rbtree_node_t **root, ngx_rbtree_node_t *sentinel,
     node->parent = temp;
 }
 
+//右旋
 static ngx_inline void
 ngx_rbtree_right_rotate(ngx_rbtree_node_t **root, ngx_rbtree_node_t *sentinel,
                         ngx_rbtree_node_t *node)
@@ -455,7 +465,14 @@ ngx_rbtree_right_rotate(ngx_rbtree_node_t **root, ngx_rbtree_node_t *sentinel,
     node->parent = temp;
 }
 
-//后继
+/**
+ * 查找x的后继节点 (比当前节点大一点,也就是右子树中，最小的点)
+ * 如果x存在右孩子，则"x的后继结点"为 "以其右孩子为根的子树的最小节点"。
+ * 如果x没有右孩子：
+ *   x为左孩子，则为父节点
+ *   x为右孩子,若该结点是其父结点的右孩子，那么需要沿着其父结点一直向树的顶端寻找，直到找到一个结点P，P结点是其父结点Q的左孩子，
+ *      那么Q就是该结点的前驱结点
+ */
 ngx_rbtree_node_t *
 ngx_rbtree_next(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
 {
