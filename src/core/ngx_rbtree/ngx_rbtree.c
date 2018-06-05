@@ -265,12 +265,13 @@ ngx_rbtree_delete(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
 
     } else {
         //node有两个儿子，那么subst是node右子树最小的节点(右子树最左)
+        //修改替换结点的父指针
 
         if (subst->parent == node) {
             temp->parent = subst;
-        } else {
+        } else { 
             //删除当前的右子树最小节点
-            temp->parent = subst->parent;
+            temp->parent = subst->parent; //把接替结点挂在subst的父结点上
         }
 
         //右子树最小值代替当前要删除的节点
@@ -281,17 +282,19 @@ ngx_rbtree_delete(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
         //将node的颜色赋值给subst
         ngx_rbt_copy_color(subst, node);
 
+        //若node为根结点，修改树的根结点指针
         if(node == *root) {
             *root = subst;
 
         } else {
+            //或者修改node的父结点对subst的指向
             if(node == node->parent->left) {
                 node->parent->left = subst;
             } else {
                 node->parent->right = subst;
             }
         }
-
+        //修改以前的node结点的子结点的指向
         if(subst->left != sentinel) {
             subst->left->parent = subst;
         }
@@ -314,7 +317,7 @@ ngx_rbtree_delete(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
     //注意此后都是针对temp操作，因为是temp所在路径删除了一个黑色节点(这里是将subst黑色提到了原来node的位置故少
     // 了一个黑色节点)，需要对temp重新平衡
 
-    //但因为删除了一个黑色结点导致黑高度减一，红黑树性质破坏，调整红黑树
+    //但因为删除了一个黑色结点导致黑高度减一，红黑树性质破坏，调整红黑树，此时temp应该为黑色空节点
     while(temp != *root && ngx_rbt_is_black(temp)) {//若temp为红色或者temp是新根，则直接将temp重绘为黑色就行了不用进入循环体
         //temp为左儿子(右儿子是对称情形)
         if(temp == temp->parent->left) {
@@ -325,7 +328,7 @@ ngx_rbtree_delete(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
              * 2、对temp父亲节的做一次左旋转，此时，temp的兄弟节点是旋转之前w的某个子节点，该子节点颜色为黑色；
              * 3、此时，case A已经转换为case B、case C 或 case D；
              */
-            if (ngx_rbt_is_red(w)) {
+            if (ngx_rbt_is_red(w)) {//如果兄弟节点为红色，因为删除之前满足红黑树属性，所以兄弟节点一定有两个黑色子节点 +++++
                 ngx_rbt_black(w); //解决： 兄弟节点修改为黑色
                 ngx_rbt_red(temp->parent); //父节点修改红色
                 ngx_rbtree_left_rotate(root, sentinel, temp->parent); //左旋父节点
@@ -337,7 +340,7 @@ ngx_rbtree_delete(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
              * 1、改变w节点的颜色；
              * 2、把temp的父亲节点作为新的temp节点；
              */
-            if(ngx_rbt_is_black(w->left) && ngx_rbt_is_black(w->right)) {
+            if(ngx_rbt_is_black(w->left) && ngx_rbt_is_black(w->right)) { //要么全黑，且存在
                 ngx_rbt_red(w); //解决：兄弟节点修改为红色
                 //注意这里已经包括了wikipedia上的case4，即temp->parent红色的话退出while循环直接将其重绘为黑色
                 temp = temp->parent;
@@ -471,7 +474,7 @@ ngx_rbtree_right_rotate(ngx_rbtree_node_t **root, ngx_rbtree_node_t *sentinel,
  * 如果x没有右孩子：
  *   x为左孩子，则为父节点
  *   x为右孩子,若该结点是其父结点的右孩子，那么需要沿着其父结点一直向树的顶端寻找，直到找到一个结点P，P结点是其父结点Q的左孩子，
- *      那么Q就是该结点的前驱结点
+ *      那么Q就是该结点的后继结点
  */
 ngx_rbtree_node_t *
 ngx_rbtree_next(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
