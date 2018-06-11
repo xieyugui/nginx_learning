@@ -19,12 +19,14 @@
 //为基数树申请节点
 static ngx_radix_node_t *ngx_radix_alloc(ngx_radix_tree_t *tree);
 
+//创建基数树，preallocate是预分配树的层数
 ngx_radix_tree_t *
 ngx_radix_tree_create(ngx_pool_t *pool, ngx_int_t preallocate)
 {
     uint32_t key, mask, inc;
     ngx_radix_tree_t *tree;
 
+    //申请ngx_raidx_tree_t,这个tree是返回的指针
     tree = ngx_palloc(pool, sizeof(ngx_radix_tree_t));
     if(tree == NULL) {
         return NULL;
@@ -35,17 +37,19 @@ ngx_radix_tree_create(ngx_pool_t *pool, ngx_int_t preallocate)
     tree->start = NULL;
     tree->size = 0;
 
+    //申请一个基数节点
     tree->root = ngx_radix_alloc(tree);
     if(tree->root == NULL) {
         return NULL;
     }
 
+    //初始化root节点
     tree->root->right = NULL;
     tree->root->left = NULL;
     tree->root->parent = NULL;
     tree->root->value = NGX_RADIX_NO_VALUE;
 
-    //如果需要的预分配结点为0个，完成返回
+    //如果需要的预分配层数为0个，完成返回
     if(preallocate == 0) {
         return tree;
     }
@@ -67,7 +71,7 @@ ngx_radix_tree_create(ngx_pool_t *pool, ngx_int_t preallocate)
 
     mask = 0;
     //inc 的二进制形式为 1000 0000 0000 0000 0000 0000 0000 0000，逐渐向右移动
-    inc = 0x80000000;
+    inc = 0x80000000;//十六进制
 
     //加入preallocate=7,最终建的基数树的节点总个数为2^(preallocate+1)-1，每一层个数为2^(7-preallocate)
     //二叉树 计算节点的方法
@@ -78,8 +82,8 @@ ngx_radix_tree_create(ngx_pool_t *pool, ngx_int_t preallocate)
     //增加节点个数    =      2         4        8         16        32        64       128
     while(preallocate--) {
         key = 0;
-        mask >>= 1;
-        mask |= 0x80000000;
+        mask >>= 1;// 右移一位，高位补0
+        mask |= 0x80000000; //首次变为1000 0000 0000 0000 0000 0000 0000 0000
 
         do {
             if (ngx_radix32tree_insert(tree, key, mask, NGX_RADIX_NO_VALUE) != NGX_OK){
@@ -161,6 +165,7 @@ ngx_radix32tree_insert(ngx_radix_tree_t *tree, uint32_t key, uint32_t mask,
     return NGX_OK;
 }
 
+//依据key值和掩码删除节点（value的值）
 ngx_int_t
 ngx_radix32tree_delete(ngx_radix_tree_t *tree, uint32_t key, uint32_t mask)
 {
@@ -196,7 +201,7 @@ ngx_radix32tree_delete(ngx_radix_tree_t *tree, uint32_t key, uint32_t mask)
     }
 
     //node为叶子节点，直接放到free区域
-    for ( ;; ) {
+    for ( ;; ) {//如果没有子节点，则递归删除空的父节点
         //删除叶子节点
         if(node->parent->right == node) {
             node->parent->right = NULL;
@@ -209,7 +214,7 @@ ngx_radix32tree_delete(ngx_radix_tree_t *tree, uint32_t key, uint32_t mask)
         node->right = tree->free;
         tree->free = node;
 
-        //假如删除node以后。父节点是叶子节点，就继续删除父节点，一直到node不是叶子节点
+        //向上回归，依次删除，直至到不能删除的结点（有有效值的孩子或者自己有有效值）
         node = node->parent;
 
         if (node->right || node->left) { //node不为叶子节点
@@ -219,7 +224,7 @@ ngx_radix32tree_delete(ngx_radix_tree_t *tree, uint32_t key, uint32_t mask)
         if (node->value != NGX_RADIX_NO_VALUE) {//node的value不为空
             break;
         }
-
+        //如果父节点为空，就不满足向上遍历查找的条件了，也就是该节点是root
         if(node->parent == NULL) {//node的parent为空
             break;
         }
@@ -459,20 +464,22 @@ ngx_radix_alloc(ngx_radix_tree_t *tree)
 
     //free中有可利用的空间节点
     if(tree->free){
-        p = tree->free;
-        tree->free = tree->free->right;
+        p = tree->free;//指向第一个可利用的空间节点
+        tree->free = tree->free->right;//改动free
         return p;
     }
 
+    //假设空暇内存大小不够分配一个节点就申请一页大小的内存
     if(tree->size < sizeof(ngx_radix_node_t)) {
         tree->start = ngx_pmemalign(tree->pool, ngx_pagesize, ngx_pagesize);
         if(tree->start == NULL) {
             return NULL;
         }
 
-        tree->size = ngx_pagesize;
+        tree->size = ngx_pagesize;//改动空暇内存大小
     }
 
+    //分配一个节点的空间
     p = (ngx_radix_node_t *) tree->start;
     tree->start += sizeof(ngx_radix_node_t);
     tree->size -= sizeof(ngx_radix_node_t);

@@ -37,7 +37,7 @@ typedef struct {
     size_t size; //已分配内存内中还未使用内存的大小
 } ngx_radix_tree_t;
 
-//创建基数树，preallocate是预分配节点的个数
+//创建基数树，preallocate是预分配树的层数
 ngx_radix_tree_t *ngx_radix_tree_create(ngx_pool_t *pool, ngx_int_t preallocate);
 
 //根据key值和掩码向基数树中插入value,返回值可能是NGX_OK,NGX_ERROR, NGX_BUSY
