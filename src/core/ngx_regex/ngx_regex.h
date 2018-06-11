@@ -28,8 +28,8 @@
 #define NGX_REGEX_CASELESS PCRE_CASELESS
 
 typedef struct {
-    pcre *code;
-    pcre_extra *extra;
+    pcre *code; //编译好的模式，pcre_compile的返回值
+    pcre_extra *extra; //pcre_study()的返回值，或NULL
 } ngx_regex_t;
 
 typedef struct {
@@ -50,9 +50,18 @@ typedef struct {
     u_char *name;
 } ngx_regex_elt_t;
 
+//初始化
 void ngx_regex_init(void);
+
+//将一个正则表达式编译为一个内部结构，匹配多个字符串时可以加快匹配速度
 ngx_int_t ngx_regex_compile(ngx_regex_compile_t *rc);
 
+//使用编译好的模式进行匹配，采用与Perl相似的算法，返回匹配串的偏移位置
+/**
+ * s 需要匹配的字符串
+ * captures 指向一个结果的整型数组
+ * size 数组大小
+ */
 #define ngx_regex_exec(re, s, captures, size)   \
     pcre_exec(re->code, re->extra, (const char *) (s)->data, (s)->len, 0, 0, captures, size)
 
