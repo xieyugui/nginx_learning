@@ -54,7 +54,7 @@ NGX_ERROR：表示错误。这时会调用ngx_http_terminate_request终止请求
 #define  NGX_AGAIN      -2 //处理未完成，函数需要被再次调用
 #define  NGX_BUSY       -3 //资源不可用  如超过了突发门限，或者所有服务都不可用等 拒绝
 #define  NGX_DONE       -4 //处理完成或者在他处继续处理。也可以作为处理成功使用
-#define  NGX_DECLINED   -5 //处理被拒绝，例如相关功能在配置文件中被关闭。不要将此当成错误
+#define  NGX_DECLINED   -5 //请求需要被转发到本阶段的下一个handler
 #define  NGX_ABORT      -6 //函数终止。也可以作为处理出错的返回值
 
 

@@ -57,21 +57,6 @@ ngx_module_t  ngx_conf_module = {
         NGX_MODULE_V1_PADDING
 };
 
-ngx_module_t  ngx_conf_module = {
-        NGX_MODULE_V1,
-        NULL,                                  /* module context */
-        ngx_conf_commands,                     /* module directives */
-        NGX_CONF_MODULE,                       /* module type */
-        NULL,                                  /* init master */
-        NULL,                                  /* init module */
-        NULL,                                  /* init process */
-        NULL,                                  /* init thread */
-        NULL,                                  /* exit thread */
-        ngx_conf_flush_files,                  /* exit process */
-        NULL,                                  /* exit master */
-        NGX_MODULE_V1_PADDING
-};
-
 /* The eight fixed arguments */
 
 static ngx_uint_t argument_number[] = {
@@ -1545,14 +1530,3 @@ ngx_conf_check_num_bounds(ngx_conf_t *cf, void *post, void *data)
 
     return NGX_CONF_ERROR;
 }
-
-
-
-
-
-
-
-
-
-
-

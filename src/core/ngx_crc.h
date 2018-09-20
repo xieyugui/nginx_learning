@@ -14,7 +14,7 @@
 
 
 /* 32-bit crc16 */
-
+//循环冗余校验表
 static ngx_inline uint32_t
 ngx_crc(u_char *data, size_t len)
 {

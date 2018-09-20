@@ -414,6 +414,12 @@ ngx_gmtime(time_t t, ngx_tm_t *tp)
     tp->ngx_tm_wday = (ngx_tm_wday_t) wday;
 }
 
+/**
+time_t ngx_next_time(time_t when) 这里when参数只是代表了当天的时间，只有秒+分钟+小时，顾名思义，寻找下一次这个时间点出现的时候的绝对时间time_t值
+
+比如已经当前已经过了12点0分0秒，那么返回的就是下一天的12点0分0秒的，从标准计时点（一般是1970年1月1日午夜）到当前时间的秒数。否则则是当天的。
+如今天0:00:00开始，过when秒后是多少时间, 获取本地时间，递增指定的秒数，再转化为time_t
+ */
 time_t
 ngx_next_time(time_t when)
 {

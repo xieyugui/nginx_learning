@@ -24,6 +24,7 @@ ngx_atomic_t         *ngx_temp_number = &temp_number;
 ngx_atomic_int_t      ngx_random_number = 123456;
 
 
+//prefix  指定的文件的路径
 ngx_int_t
 ngx_get_full_name(ngx_pool_t *pool, ngx_str_t *prefix, ngx_str_t *name)
 {
@@ -52,16 +53,18 @@ ngx_get_full_name(ngx_pool_t *pool, ngx_str_t *prefix, ngx_str_t *name)
         return NGX_ERROR;
     }
 
+    //字符串拷贝，凑成带路径的文件变量
     p = ngx_cpymem(n, prefix->data, len);
     ngx_cpystrn(p, name->data, name->len + 1);
 
+    //新的value赋值
     name->len += len;
     name->data = n;
 
     return NGX_OK;
 }
 
-
+//判断是不是以/开始的，表明该文件名前面是否带路径
 static ngx_int_t
 ngx_test_full_name(ngx_str_t *name)
 {
@@ -119,6 +122,7 @@ ngx_write_chain_to_temp_file(ngx_temp_file_t *tf, ngx_chain_t *chain)
 {
     ngx_int_t  rc;
 
+    //判断文件是否存在
     if (tf->file.fd == NGX_INVALID_FILE) {
         rc = ngx_create_temp_file(&tf->file, tf->path, tf->pool,
                                   tf->persistent, tf->clean, tf->access);
@@ -145,7 +149,17 @@ ngx_write_chain_to_temp_file(ngx_temp_file_t *tf, ngx_chain_t *chain)
     return ngx_write_chain_to_file(&tf->file, chain, tf->offset, tf->pool);
 }
 
-
+/**
+ *
+ * @param file
+ * @param path 路径
+ * @param pool
+ * @param persistent 文件内容是否永久存储
+ * @param clean 文件是否为临时的，关闭连接会删除文件
+ * @param access 文件权限 6660等  默认0600
+ * @return
+ * 参考  https://blog.csdn.net/ApeLife/article/details/53043275
+ */
 ngx_int_t
 ngx_create_temp_file(ngx_file_t *file, ngx_path_t *path, ngx_pool_t *pool,
                      ngx_uint_t persistent, ngx_uint_t clean, ngx_uint_t access)
@@ -170,6 +184,12 @@ ngx_create_temp_file(ngx_file_t *file, ngx_path_t *path, ngx_pool_t *pool,
         prefix = 0;
     }
 
+    //计算文件名的长度。例如:/home/nginx/tmpfile/9/32/178/00004178329
+    //path->name.len表示的是目录的长度
+    //path->len表示的是子目录的层数，最多三层
+    //10表示文件名
+    // 1表示文件名最后1位由随机数组成
+    //可以参考下面的布局图
     file->name.len = name.len + 1 + levels + 10;
 
     file->name.data = ngx_pnalloc(pool, file->name.len + 1);
@@ -191,17 +211,27 @@ ngx_create_temp_file(ngx_file_t *file, ngx_path_t *path, ngx_pool_t *pool,
 
     p += 1 + levels;
 
+    //获取一个随机数
     n = (uint32_t) ngx_next_temp_number(0);
 
+    //创建一个文件清理对象，并加入到链表。目的是在文件回收时，能够关闭文件，或者删除文件
     cln = ngx_pool_cleanup_add(pool, sizeof(ngx_pool_cleanup_file_t));
     if (cln == NULL) {
         return NGX_ERROR;
     }
 
+    //为什么需要循环? 因为如果拼装后的文件目录不存在，
+    //则先创建目录后，然后循环继续拼装一个完整的文件路径
     for ( ;; ) {
+
+        //文件名由11位数组成，前10位不够时补0，第11位为随机数
+        //此时结果为"/home/nginx/tmpfile/00004178329"，这时还没有生成中间的子目录
         (void) ngx_sprintf(p, "%010uD%Z", n);
 
         if (!prefix) {
+
+            //根据最后11位文件名，生成中间的子目录
+            //此时得到完成的文件路径"/home/nginx/tmpfile/9/32/178/00004178329"
             ngx_create_hashed_filename(path, file->name.data, file->name.len);
         }
 
@@ -213,6 +243,7 @@ ngx_create_temp_file(ngx_file_t *file, ngx_path_t *path, ngx_pool_t *pool,
         ngx_log_debug1(NGX_LOG_DEBUG_CORE, file->log, 0,
                        "temp fd:%d", file->fd);
 
+        //注册文件清理回调
         if (file->fd != NGX_INVALID_FILE) {
 
             cln->handler = clean ? ngx_pool_delete_file : ngx_pool_cleanup_file;
@@ -227,6 +258,7 @@ ngx_create_temp_file(ngx_file_t *file, ngx_path_t *path, ngx_pool_t *pool,
 
         err = ngx_errno;
 
+        //文件存在，则继续拼装，得到文件的完整路径，直到文件名不相同
         if (err == NGX_EEXIST_FILE) {
             n = (uint32_t) ngx_next_temp_number(1);
             continue;
@@ -239,6 +271,9 @@ ngx_create_temp_file(ngx_file_t *file, ngx_path_t *path, ngx_pool_t *pool,
             return NGX_ERROR;
         }
 
+        //如果是目录不存在，则创建子目录。例如"/home/nginx/tmpfile/9/32/178/00004178329"
+        //则将创建"/home/nginx/tmpfile/9"，"/home/nginx/tmpfile/9/32"，
+        //"/home/nginx/tmpfile/9/32/178"这三个目录
         if (ngx_create_path(file, path) == NGX_ERROR) {
             return NGX_ERROR;
         }
@@ -246,7 +281,11 @@ ngx_create_temp_file(ngx_file_t *file, ngx_path_t *path, ngx_pool_t *pool,
 }
 
 
-//是通过level设置对应的文件夹路径，是根据md5值过来的后面的位数定义的文件夹
+//功能:由文件名生成3层子目录结构.例如/home/nginx/tmpfile/9/32/178/00004178329，
+//则这个函数将生成/9/32/178/这三层子目录结构。
+//9表示00004178329中的最后一位
+//32表示00004178329中的第9至第10位
+//178表示00004178329中的第6至第8位
 void
 ngx_create_hashed_filename(ngx_path_t *path, u_char *file, size_t len)
 {
@@ -262,12 +301,14 @@ ngx_create_hashed_filename(ngx_path_t *path, u_char *file, size_t len)
      /cache/0/8d/8ef9229f02c5672c747dc7a324d658d0  注意后面的8d0和cache后面的/0/8d一致
     */
     for (n = 0; n < NGX_MAX_PATH_LEVEL; n++) {
+        //每一个子目录的长度
         level = path->level[n];
 
         if (level == 0) {
             break;
         }
 
+        //从文件名的最后面位置开始，取level位内容，当做子目录
         len -= level;
         file[i - 1] = '/';
         ngx_memcpy(&file[i], &file[len], level);
@@ -275,7 +316,7 @@ ngx_create_hashed_filename(ngx_path_t *path, u_char *file, size_t len)
     }
 }
 
-
+//创建文件目录
 ngx_int_t
 ngx_create_path(ngx_file_t *file, ngx_path_t *path)
 {
@@ -290,6 +331,7 @@ ngx_create_path(ngx_file_t *file, ngx_path_t *path)
             break;
         }
 
+        //得到每一个子目录的名称
         pos += path->level[i] + 1;
 
         file->name.data[pos] = '\0';
@@ -297,6 +339,7 @@ ngx_create_path(ngx_file_t *file, ngx_path_t *path)
         ngx_log_debug1(NGX_LOG_DEBUG_CORE, file->log, 0,
                        "temp file: \"%s\"", file->name.data);
 
+        //创建子目录
         if (ngx_create_dir(file->name.data, 0700) == NGX_FILE_ERROR) {
             err = ngx_errno;
             if (err != NGX_EEXIST) {
@@ -313,7 +356,7 @@ ngx_create_path(ngx_file_t *file, ngx_path_t *path)
     return NGX_OK;
 }
 
-
+//创建全路径
 ngx_err_t
 ngx_create_full_path(u_char *dir, ngx_uint_t access)
 {
@@ -357,7 +400,7 @@ ngx_create_full_path(u_char *dir, ngx_uint_t access)
     return err;
 }
 
-
+//获得下一个临时number值
 ngx_atomic_uint_t
 ngx_next_temp_number(ngx_uint_t collision)
 {
@@ -370,7 +413,7 @@ ngx_next_temp_number(ngx_uint_t collision)
     return n + add;
 }
 
-
+//设置某一模块中的路径指令
 char *
 ngx_conf_set_path_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -430,7 +473,7 @@ ngx_conf_set_path_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return NGX_CONF_OK;
 }
 
-
+//合并路径值 ，合并prev或者init到path中
 char *
 ngx_conf_merge_path_value(ngx_conf_t *cf, ngx_path_t **path, ngx_path_t *prev,
                           ngx_path_init_t *init)
@@ -469,7 +512,8 @@ ngx_conf_merge_path_value(ngx_conf_t *cf, ngx_path_t **path, ngx_path_t *prev,
     return NGX_CONF_OK;
 }
 
-
+//设置某一个文件的所有者、所属组、其他人的访问权限
+//fastcgi_store_access user:rw group:rw all:r;
 char *
 ngx_conf_set_access_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -535,7 +579,8 @@ ngx_conf_set_access_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return NGX_CONF_ERROR;
 }
 
-
+//添加路径到cf->cycle->paths数组中
+//首先检查cycle->paths数组中是否已经有同名的path。如果有则进一步检查path->data、path->level等字段是否一致；否则直接向cycle->paths数组中添加slot
 ngx_int_t
 ngx_add_path(ngx_conf_t *cf, ngx_path_t **slot)
 {
@@ -607,7 +652,8 @@ ngx_add_path(ngx_conf_t *cf, ngx_path_t **slot)
     return NGX_OK;
 }
 
-
+//创建cycle->paths数组中的所有路径
+//遍历创建cycle->paths数组中的每一个目录，然后修改目录的访问权限为0700，所有者为user
 ngx_int_t
 ngx_create_paths(ngx_cycle_t *cycle, ngx_uid_t user)
 {
@@ -671,7 +717,13 @@ ngx_create_paths(ngx_cycle_t *cycle, ngx_uid_t user)
     return NGX_OK;
 }
 
-
+/*
+将名称为src的文件重命名为to的文件
+ 1.修改src文件访问权限
+ 2.修改src文件的最近修改时间
+ 3.重命名文件。 此时如果产生NGX_ENOPATH错误，则创建全路径然后再重命名文件；如果产生NGX_EXDEV错误（Cross-device link)，
+    则先将src文件拷贝到to位置的某个文件，然后再对该文件重命名。
+ */
 ngx_int_t
 ngx_ext_rename_file(ngx_str_t *src, ngx_str_t *to, ngx_ext_rename_file_t *ext)
 {
@@ -806,7 +858,7 @@ ngx_ext_rename_file(ngx_str_t *src, ngx_str_t *to, ngx_ext_rename_file_t *ext)
     return NGX_ERROR;
 }
 
-
+//将from文件拷贝为to文件。在拷贝时由cf指定拷贝大小以及拷贝过程中用的缓冲区大小
 ngx_int_t
 ngx_copy_file(u_char *from, u_char *to, ngx_copy_file_t *cf)
 {
@@ -953,6 +1005,12 @@ ngx_copy_file(u_char *from, u_char *to, ngx_copy_file_t *cf)
  * ctx->log - a log
  *
  * on fatal (memory) error handler must return NGX_ABORT to stop walking tree
+ *
+ * 遍历到的文件时普通文件: 直接调用ctx->file_handler()处理
+ * 遍历到的文件的目录文件: 递归调用ngx_walk_tree()遍历文件，此时会调用两个回调函数，一个是进入目录时的回调pre_tree_handler()；
+ *                      另一个是离开目录时的回调post_tree_handler()
+ * 遍历到的文件时特殊文件: 调用ctx->spec_handler()处理
+ *
  */
 
 ngx_int_t
