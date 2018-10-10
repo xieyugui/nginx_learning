@@ -136,9 +136,9 @@ static void ngx_epoll_eventfd_handler(ngx_event_t *ev);
 static void *ngx_epoll_create_conf(ngx_cycle_t *cycle);
 static char *ngx_epoll_init_conf(ngx_cycle_t *cycle, void *conf);
 
-static int                  ep = -1; //ngx_epoll_init -> epoll_create的返回值
-static struct epoll_event  *event_list;  //epoll_events个sizeof(struct epoll_event) * nevents, 见ngx_epoll_init
-static ngx_uint_t           nevents;
+static int                  ep = -1; /* epoll对象描述符 */
+static struct epoll_event  *event_list; /* 作为epoll_wait函数的第二个参数，保存从内存复制的事件 */
+static ngx_uint_t           nevents; /* epoll_wait函数返回的最多事件数 */
 
 #if (NGX_HAVE_EVENTFD)
 //执行ngx_epoll_notify后会通过epoll_wait返回执行该函数ngx_epoll_notify_handler
