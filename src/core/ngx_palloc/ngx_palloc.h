@@ -1,7 +1,7 @@
 /*
 * @author:    daemon.xie
 * @license:   Apache Licence
-* @contact:   xieyugui@migu.cn 
+* @contact:   xieyugui
 * @software:  CLion
 * @file:      ngx_palloc.h
 * @date:      2017/11/28 下午4:14

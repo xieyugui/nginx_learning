@@ -1,7 +1,7 @@
 /*
 * @author:    daemon.xie
 * @license:   Apache Licence
-* @contact:   xieyugui@migu.cn 
+* @contact:   xieyugui
 * @software:  CLion
 * @file:      bstree.c
 * @date:      2017/12/20 下午3:02

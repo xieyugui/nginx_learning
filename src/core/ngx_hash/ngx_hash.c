@@ -1,7 +1,7 @@
 /*
 * @author:    daemon.xie
 * @license:   Apache Licence
-* @contact:   xieyugui@migu.cn 
+* @contact:   xieyugui
 * @software:  CLion
 * @file:      ngx_hash.c
 * @date:      2017/12/28 下午6:09

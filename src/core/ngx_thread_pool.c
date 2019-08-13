@@ -1,7 +1,7 @@
 /*
 * @author:    daemon.xie
 * @license:   Apache Licence
-* @contact:   xieyugui@migu.cn 
+* @contact:   xieyugui
 * @software:  CLion
 * @file:      ngx_thread_pool.c
 * @date:      2018/3/6 下午4:04

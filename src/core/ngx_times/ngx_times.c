@@ -1,7 +1,7 @@
 /*
 * @author:    daemon.xie
 * @license:   Apache Licence
-* @contact:   xieyugui@migu.cn 
+* @contact:   xieyugui
 * @software:  CLion
 * @file:      ngx_times.c
 * @date:      2018/1/17 下午5:24

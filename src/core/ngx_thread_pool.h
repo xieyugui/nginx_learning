@@ -1,7 +1,7 @@
 /*
 * @author:    daemon.xie
 * @license:   Apache Licence
-* @contact:   xieyugui@migu.cn 
+* @contact:   xieyugui
 * @software:  CLion
 * @file:      ngx_thread_pool.h
 * @date:      2018/3/6 下午4:04
@@ -24,7 +24,7 @@
 struct ngx_thread_task_s {
     // 链表指针，多个task形成一个链表
     ngx_thread_task_t *next; //指向下一个提交的任务
-    ngx_uint_t id; //任务id  没添加一个任务就自增加
+    ngx_uint_t id; //任务id  每添加一个任务就自增加
 
     // 用户使用的数据，也就是handler的data参数
     // 用这个参数传递给线程要处理的各种数据

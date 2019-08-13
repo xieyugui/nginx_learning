@@ -2,6 +2,9 @@
 /*
  * Copyright (C) Igor Sysoev
  * Copyright (C) Nginx, Inc.
+ * https://www.kancloud.cn/digest/understandingnginx/202600
+ * https://github.com/y123456yz/reading-code-of-nginx-1.9.2/blob/master/nginx-1.9.2/src/event/ngx_event.h
+ * https://github.com/chronolaw/annotated_nginx/blob/master/nginx/src/event/ngx_event.h
  */
 
 
@@ -63,7 +66,7 @@ struct ngx_event_s {
     //标志位，为1时表示事件在处理过程中出现错误
     unsigned         error:1;
 
-    //标志位，为I时表示这个事件已经超时，用以提示事件的消费模块做超时处理
+    //标志位，为1时表示这个事件已经超时，用以提示事件的消费模块做超时处理
     unsigned         timedout:1;
     //标志位，为1时表示这个事件存在于定时器中
     unsigned         timer_set:1;
@@ -116,7 +119,7 @@ struct ngx_event_s {
      *   accept:     1 if accept many, 0 otherwise
      */
 
-//标志住，在epoll事件驱动机制下表示一次尽可能多地建立TCP连接，它与multi_accept配置项对应
+//标志位，在epoll事件驱动机制下表示一次尽可能多地建立TCP连接，它与multi_accept配置项对应
 #if (NGX_HAVE_KQUEUE) || (NGX_HAVE_IOCP)
     int              available;
 #else
@@ -236,7 +239,7 @@ extern ngx_uint_t            ngx_use_epoll_rdhup;
  * The event filter requires to read/write the whole data:
  * select, poll, /dev/poll, kqueue, epoll.
  */
-//epoll的LT模式   见ngx_handle_read_event  nginx默认使用NGX_USE_CLEAR_EVENT边沿触发方式
+//epoll的LT模式   见ngx_handle_read_event
 #define NGX_USE_LEVEL_EVENT      0x00000001
 
 /*
@@ -249,7 +252,7 @@ extern ngx_uint_t            ngx_use_epoll_rdhup;
 /*
  * The event filter notifies only the changes and an initial level:
  * kqueue, epoll.
- * 边沿触发
+ * 边沿触发  nginx默认使用NGX_USE_CLEAR_EVENT边沿触发方式
  */
 #define NGX_USE_CLEAR_EVENT      0x00000004
 
